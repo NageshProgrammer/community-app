@@ -1,0 +1,150 @@
+/* src/index.css */
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Manrope:wght@400;500;600;700&display=swap');
+
+@import "tailwindcss";
+
+@theme {
+  --color-brand: #1DA1F2;
+  --color-dark: #15202B;
+  --color-text-main: #ffffff; /* We add a variable for main text */
+}
+
+@layer base {
+  :root {
+    --background: 0 0% 98%;
+    --foreground: 0 0% 7%;
+    --card: 0 0% 96%;
+    --card-foreground: 0 0% 7%;
+    --popover: 0 0% 98%;
+    --popover-foreground: 0 0% 7%;
+    --primary: 0 0% 9%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 0 0% 90%;
+    --secondary-foreground: 0 0% 10%;
+    --muted: 0 0% 88%;
+    --muted-foreground: 0 0% 42%;
+    --accent: 0 0% 85%;
+    --accent-foreground: 0 0% 10%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 0 0% 88%;
+    --input: 0 0% 88%;
+    --ring: 0 0% 8%;
+    --radius: 0.5rem;
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 0 0% 26%;
+    --sidebar-primary: 0 0% 10%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 0 0% 95%;
+    --sidebar-accent-foreground: 0 0% 10%;
+    --sidebar-border: 0 0% 91%;
+    --sidebar-ring: 0 0% 60%;
+
+    --font-display: 'Space Grotesk', sans-serif;
+    --font-body: 'Manrope', sans-serif;
+  }
+}
+
+@layer base {
+  :root {
+    --background: 210 30% 10%;
+    --foreground: 0 0% 100%;
+    --card: 210 20% 14%;
+    --card-foreground: 0 0% 100%;
+    --border: 210 18% 20%;
+    --input: 210 16% 20%;
+    --ring: 210 40% 40%;
+    --sidebar-background: 210 18% 15%;
+    --sidebar-foreground: 0 0% 80%;
+    --sidebar-primary: 210 30% 12%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-border: 210 18% 22%;
+  }
+  * {
+    border-color: hsl(var(--border));
+  }
+  body {
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+    font-family: var(--font-body);
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    transition: background-color 0.3s ease, color 0.3s ease;
+  }
+}
+
+/* Force a dark surfaces baseline */
+body.dark-theme, html.dark-theme {
+  --background: 210 30% 10%;
+  --foreground: 0 0% 100%;
+}
+
+body.light-theme, html.light-theme {
+  --background: 0 0% 96%;
+  --foreground: 0 0% 10%;
+}
+
+/* =========================================
+   LIGHT THEME OVERRIDES
+   ========================================= */
+.light-theme {
+  --color-dark: #ffffff;
+  --color-text-main: #0f1419; /* Flips the body text to dark! */
+}
+
+.light-theme .bg-gray-900 {
+  background-color: #f7f9f9 !important;
+}
+
+.light-theme .bg-gray-800 {
+  background-color: #eff3f4 !important;
+}
+
+.light-theme .border-gray-800 {
+  border-color: #eff3f4 !important;
+}
+
+.light-theme .text-gray-500,
+.light-theme .text-gray-400 {
+  color: #536471 !important;
+}
+
+/* Makes inactive sidebar icons dark in light mode */
+.light-theme .text-gray-300 {
+  color: #0f1419 !important;
+}
+
+/* Forces text-white to be dark, BUT uses :not(.bg-brand)
+  so the text inside your blue "Post" button stays white!
+*/
+.light-theme .text-white:not(.bg-brand) {
+  color: #0f1419 !important;
+}
+
+/* Fixes the Follow buttons specifically */
+.light-theme .bg-white {
+  background-color: #0f1419 !important;
+  color: #ffffff !important;
+}
+
+/* Hide scrollbars */
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.hide-scrollbar {
+  -ms-overflow-style: none; 
+  scrollbar-width: none;  
+}
+
+/* Fix the hover states in light mode */
+.light-theme .hover\:bg-gray-900:hover,
+.light-theme .hover\:bg-gray-900\/50:hover,
+.light-theme .hover\:bg-gray-800\/50:hover {
+  background-color: #eff3f4 !important;
+}
+
+/* Fix active link background in sidebar */
+.light-theme .bg-gray-900 {
+  background-color: #eff3f4 !important;
+}
