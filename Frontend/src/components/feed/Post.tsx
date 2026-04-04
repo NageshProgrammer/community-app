@@ -1,7 +1,9 @@
+// src/components/feed/Post.tsx
 import { motion, AnimatePresence } from 'framer-motion';
-import { useState, useEffect } from 'react';
-import { MessageCircle, Repeat, Heart, Share, MoreHorizontal } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { MessageCircle, Repeat, Heart, Share, MoreHorizontal, MapPin } from 'lucide-react';
 import { usePosts, type CommentData } from '../../context/PostContext';
+import { Link } from 'react-router-dom';
 
 export interface PostData {
   id: string;
@@ -18,6 +20,8 @@ export interface PostData {
   reposts: number;
   isLiked?: boolean;
   isReposted?: boolean;
+  image?: string | null;     // NEW
+  location?: string | null;  // NEW
 }
 
 interface PostProps {
@@ -29,14 +33,13 @@ interface PostProps {
   onShare: () => void;
 }
 
-import { Link } from 'react-router-dom';
-
 export function Post({ post, index, onLike, onRepost, onComment, onShare }: PostProps) {
   const [commentText, setCommentText] = useState('');
   const [showCommentInput, setShowCommentInput] = useState(false);
   const { getComments } = usePosts();
   const [comments, setComments] = useState<CommentData[]>([]);
   const [loadingComments, setLoadingComments] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     if (showCommentInput) {
@@ -50,95 +53,83 @@ export function Post({ post, index, onLike, onRepost, onComment, onShare }: Post
     }
   }, [showCommentInput, post.id, getComments]);
 
+  const handleCommentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setCommentText(e.target.value);
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 120)}px`;
+    }
+  };
+
+  const submitComment = async () => {
+    if (!commentText.trim()) return;
+    await onComment(commentText.trim());
+    setCommentText('');
+    if (textareaRef.current) textareaRef.current.style.height = 'auto';
+    const data = await getComments(post.id);
+    setComments(data);
+  };
+
   return (
     <motion.article
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, delay: index * 0.1 }}
-      className="p-4 border-b border-gray-800 hover:bg-gray-900/50 transition-colors"
+      className="p-4 border-b border-gray-800 hover:bg-gray-800 transition-colors cursor-pointer"
     >
       <div className="flex gap-4">
-        {/* Avatar */}
         <Link to={`/profile/${post.author.id}`} className="flex-shrink-0">
           <img 
             src={post.author.avatar} 
             alt={post.author.name} 
-            className="w-12 h-12 rounded-full object-cover bg-gray-800 hover:opacity-80 transition-opacity"
+            className="w-12 h-12 rounded-full object-cover bg-gray-800 hover:opacity-80 transition-opacity shadow-sm"
           />
         </Link>
 
         <div className="flex-1">
-          {/* Header */}
           <div className="flex justify-between items-start">
             <div>
               <Link to={`/profile/${post.author.id}`} className="text-white font-bold hover:underline">
                 {post.author.name}
               </Link>
-              <span className="text-gray-300 ml-2">@{post.author.handle}</span>
-              <span className="text-gray-300 mx-1">·</span>
-              <span className="text-gray-300 hover:underline">{post.timestamp}</span>
+              <span className="text-gray-400 ml-2 font-medium">@{post.author.handle}</span>
+              <span className="text-gray-500 mx-1">·</span>
+              <span className="text-gray-400 hover:underline">{post.timestamp}</span>
             </div>
-            <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} className="text-gray-400 hover:text-brand">
+            <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} className="text-gray-400 hover:text-brand transition-colors">
               <MoreHorizontal size={20} />
             </motion.button>
           </div>
 
-          {/* Content */}
           <p className="mt-2 text-[15px] leading-relaxed whitespace-pre-wrap text-gray-100">
             {post.content}
           </p>
 
-          {/* Action Buttons */}
-          <div className="flex justify-between mt-4 text-gray-400 max-w-md">
-            <ActionIcon 
-              icon={MessageCircle} 
-              count={post.comments} 
-              hoverColor="text-blue-300" 
-              hoverBg="bg-blue-500/10" 
-              isActive={showCommentInput}
-              activeColor="text-blue-300"
-              onClick={() => setShowCommentInput((prev) => !prev)}
-            />
-            
-            <ActionIcon 
-              icon={Repeat} 
-              count={post.reposts} 
-              hoverColor="text-green-300" 
-              hoverBg="bg-green-500/10" 
-              isActive={post.isReposted ?? false}
-              activeColor="text-green-300"
-              onClick={onRepost}
-            />
-            
-            <ActionIcon 
-              icon={Heart} 
-              count={post.likes} 
-              hoverColor="text-pink-300" 
-              hoverBg="bg-pink-500/10" 
-              isActive={post.isLiked ?? false}
-              activeColor="text-pink-300"
-              onClick={onLike}
-            />
-            
-            <ActionIcon 
-              icon={Share} 
-              hoverColor="text-brand" 
-              hoverBg="bg-brand/10" 
-              isActive={false}
-              activeColor="text-brand"
-              onClick={onShare}
-            />
+          {/* RENDER ATTACHED IMAGE */}
+          {post.image && (
+            <div className="mt-3 rounded-2xl overflow-hidden border border-gray-800">
+              <img src={post.image} alt="Post attachment" className="w-full h-auto max-h-[500px] object-cover" />
+            </div>
+          )}
+
+          {/* RENDER TAGGED LOCATION */}
+          {post.location && (
+            <div className="flex items-center gap-1 mt-3 text-brand font-medium text-sm">
+              <MapPin size={16} />
+              <span>{post.location}</span>
+            </div>
+          )}
+
+          <div className="flex justify-between mt-4 text-gray-500 max-w-md">
+            <ActionIcon icon={MessageCircle} count={post.comments} hoverColor="hover:text-blue-500" hoverBg="group-hover:bg-blue-500/10" activeBg="bg-blue-500/10" isActive={showCommentInput} activeColor="text-blue-500" onClick={() => setShowCommentInput((prev) => !prev)} />
+            <ActionIcon icon={Repeat} count={post.reposts} hoverColor="hover:text-green-500" hoverBg="group-hover:bg-green-500/10" activeBg="bg-green-500/10" isActive={post.isReposted ?? false} activeColor="text-green-500" onClick={onRepost} />
+            <ActionIcon icon={Heart} count={post.likes} hoverColor="hover:text-pink-500" hoverBg="group-hover:bg-pink-500/10" activeBg="bg-pink-500/10" isActive={post.isLiked ?? false} activeColor="text-pink-500" fillIcon={post.isLiked ?? false} onClick={onLike} />
+            <ActionIcon icon={Share} hoverColor="hover:text-brand" hoverBg="group-hover:bg-brand/10" activeBg="bg-brand/10" isActive={false} activeColor="text-brand" onClick={onShare} />
           </div>
 
           <AnimatePresence>
             {showCommentInput && (
-              <motion.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: 'auto', opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                className="overflow-hidden"
-              >
-                {/* Comments List */}
+              <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
                 <div className="mt-4 space-y-4 border-l-2 border-gray-800 ml-2 pl-4">
                   {loadingComments ? (
                     <p className="text-gray-500 text-sm">Loading comments...</p>
@@ -150,12 +141,10 @@ export function Post({ post, index, onLike, onRepost, onComment, onShare }: Post
                         </Link>
                         <div className="flex-1">
                           <div className="flex items-center gap-2">
-                            <Link to={`/profile/${comment.author.id}`} className="text-white font-bold text-sm hover:underline">
-                              {comment.author.name}
-                            </Link>
-                            <span className="text-gray-500 text-xs">@{comment.author.handle}</span>
+                            <Link to={`/profile/${comment.author.id}`} className="text-white font-bold text-sm hover:underline">{comment.author.name}</Link>
+                            <span className="text-gray-500 text-xs font-medium">@{comment.author.handle}</span>
                           </div>
-                          <p className="text-gray-200 text-sm">{comment.content}</p>
+                          <p className="text-gray-200 text-sm mt-0.5">{comment.content}</p>
                         </div>
                       </div>
                     ))
@@ -164,29 +153,22 @@ export function Post({ post, index, onLike, onRepost, onComment, onShare }: Post
                   )}
                 </div>
 
-                {/* Comment Input */}
-                <div className="mt-4 flex gap-2">
-                  <textarea
-                    rows={1}
-                    value={commentText}
-                    onChange={(e) => setCommentText(e.target.value)}
-                    className="flex-1 bg-gray-900 border border-gray-800 rounded-lg p-2 text-gray-100 focus:outline-none focus:ring-1 focus:ring-brand text-sm"
-                    placeholder="Write a comment..."
-                  />
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      if (!commentText.trim()) return;
-                      await onComment(commentText.trim());
-                      setCommentText('');
-                      // Refresh comments
-                      const data = await getComments(post.id);
-                      setComments(data);
-                    }}
-                    className="bg-brand text-white px-4 py-1 rounded-full hover:bg-brand/80 text-sm font-bold"
+                <div className="mt-4 flex gap-3 items-end bg-transparent">
+                  <div className="flex-1 relative bg-gray-800 rounded-2xl border border-gray-800/50 shadow-inner transition-all overflow-hidden">
+                    <textarea
+                      ref={textareaRef} rows={1} value={commentText} onChange={handleCommentChange}
+                      className="w-full bg-transparent py-3 px-4 text-white focus:outline-none text-sm resize-none max-h-[120px] scrollbar-thin scrollbar-thumb-gray-700 block"
+                      placeholder="Write a reply..." style={{ minHeight: '44px' }}
+                    />
+                  </div>
+                  <motion.button
+                    type="button" whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={submitComment} disabled={!commentText.trim()}
+                    className={`px-5 py-2.5 rounded-full text-sm font-bold shadow-md transition-all h-fit mb-[2px] ${
+                      commentText.trim() ? 'bg-brand text-brand-contrast hover:opacity-90' : 'bg-gray-800 text-gray-500 cursor-not-allowed'
+                    }`}
                   >
-                    Post
-                  </button>
+                    Reply
+                  </motion.button>
                 </div>
               </motion.div>
             )}
@@ -197,31 +179,46 @@ export function Post({ post, index, onLike, onRepost, onComment, onShare }: Post
   );
 }
 
-// Updated Helper Component
 interface ActionIconProps {
-  icon: React.ComponentType<{ className?: string; size?: number }>;
+  icon: React.ComponentType<{ className?: string; size?: number; fill?: string }>;
   count?: number;
   hoverColor: string;
   hoverBg: string;
+  activeBg: string;
   isActive?: boolean;
   activeColor?: string;
+  fillIcon?: boolean;
   onClick?: () => void;
 }
 
-function ActionIcon({ icon: Icon, count, hoverColor, hoverBg, isActive = false, activeColor = '', onClick }: ActionIconProps) {
+function ActionIcon({ icon: Icon, count, hoverColor, hoverBg, activeBg, isActive = false, activeColor = '', fillIcon = false, onClick }: ActionIconProps) {
   return (
     <motion.button
-      onClick={(e) => {
-        e.stopPropagation(); // Prevents clicking the post when clicking the button
-        if (onClick) onClick();
-      }}
-      className={`flex items-center gap-2 group transition-colors hover:${hoverColor} ${isActive ? activeColor : ''}`}
-      whileTap={{ scale: 0.8 }}
+      onClick={(e) => { e.stopPropagation(); if (onClick) onClick(); }}
+      className={`flex items-center gap-1.5 group transition-colors duration-300 ${hoverColor} ${isActive ? activeColor : ''}`}
+      whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
     >
-      <div className={`p-2 rounded-full transition-colors group-hover:${hoverBg} ${isActive ? hoverBg : ''}`}>
-        <Icon className={`w-[18px] h-[18px] ${isActive ? activeColor : ''}`} />
+      <div className={`p-2 rounded-full transition-all duration-300 ${hoverBg} ${isActive ? activeBg : 'bg-transparent'}`}>
+        <motion.div
+          initial={false}
+          animate={isActive ? { scale: [1, 1.5, 0.85, 1.15, 1], rotate: [0, -10, 10, -5, 0] } : { scale: 1, rotate: 0 }}
+          transition={{ duration: 0.5, type: "spring", bounce: 0.6 }}
+        >
+          <Icon className={`w-[18px] h-[18px] transition-colors duration-300`} fill={fillIcon ? "currentColor" : "none"} />
+        </motion.div>
       </div>
-      {count !== undefined && <span className="text-sm">{count}</span>}
+      {count !== undefined && (
+        <div className="overflow-hidden h-5 flex items-center relative min-w-[20px]">
+          <AnimatePresence mode="popLayout">
+            <motion.span 
+              key={count} initial={{ y: 15, opacity: 0, scale: 0.8 }} animate={{ y: 0, opacity: 1, scale: 1 }} exit={{ y: -15, opacity: 0, scale: 0.8 }} transition={{ type: "spring", stiffness: 300, damping: 25 }}
+              className="text-sm font-medium text-left absolute"
+            >
+              {count > 0 ? count : ''}
+            </motion.span>
+          </AnimatePresence>
+        </div>
+      )}
     </motion.button>
   );
 }

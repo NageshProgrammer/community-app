@@ -19,7 +19,7 @@ export interface CommentData {
 
 interface PostContextType {
   posts: PostData[];
-  addPost: (content: string, userId: string) => Promise<void>;
+  addPost: (content: string, userId: string, image?: string | null, location?: string | null) => Promise<void>;
   toggleLike: (postId: string) => Promise<void>;
   toggleRepost: (postId: string) => Promise<void>;
   addComment: (postId: string, content: string) => Promise<void>;
@@ -88,6 +88,8 @@ export function PostProvider({ children }: { children: ReactNode }) {
             reposts: post.reposts?.[0]?.count || 0,
             isLiked: likedIds.includes(post.id),
             isReposted: repostedIds.includes(post.id),
+            image: post.image || null, // Pulls from DB if you add the column later
+            location: post.location || null, // Pulls from DB if you add the column later
           };
         });
         setPosts(mappedPosts);
@@ -102,12 +104,12 @@ export function PostProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  // Fetch posts from Supabase
   useEffect(() => {
     fetchPosts();
   }, [user]);
 
-  const addPost = async (content: string, userId: string) => {
+  // UPDATED: Now accepts image and location parameters
+  const addPost = async (content: string, userId: string, image?: string | null, location?: string | null) => {
     if (!userId) return;
 
     try {
@@ -117,6 +119,7 @@ export function PostProvider({ children }: { children: ReactNode }) {
           author_id: userId,
           content,
           title: content.substring(0, 50).trim(),
+          // Note: To save image/location to Supabase permanently, you need to add those columns to your table.
         })
         .select();
 
@@ -145,6 +148,8 @@ export function PostProvider({ children }: { children: ReactNode }) {
         reposts: 0,
         isLiked: false,
         isReposted: false,
+        image: image || null, // Optimistically render the image
+        location: location || null, // Optimistically render the location
       };
 
       setPosts(prev => [mappedPost, ...prev]);
@@ -175,7 +180,6 @@ export function PostProvider({ children }: { children: ReactNode }) {
         .insert({ post_id: postId, user_id: user.id });
       if (error) throw error;
 
-      // Notification logic
       if (user.id !== post.author.id) {
         const { data: profile } = await supabase.from('profiles').select('full_name, username').eq('id', user.id).single();
         await supabase.from('notifications').insert({
@@ -245,7 +249,6 @@ export function PostProvider({ children }: { children: ReactNode }) {
       )
     );
 
-    // Notification logic
     const post = posts.find(p => p.id === postId);
     if (post && user.id !== post.author.id) {
       const { data: profile } = await supabase.from('profiles').select('full_name, username').eq('id', user.id).single();
@@ -300,8 +303,6 @@ export function PostProvider({ children }: { children: ReactNode }) {
       const url = `${window.location.origin}/community?shared=${postId}`;
       await navigator.clipboard.writeText(url);
     }
-
-    // Optionally create a repost record for share stats
     await toggleRepost(postId);
   };
 
@@ -312,7 +313,7 @@ export function PostProvider({ children }: { children: ReactNode }) {
   );
 }
 
-export const usePosts = () => { // eslint-disable-line react-refresh/only-export-components
+export const usePosts = () => { 
   const context = useContext(PostContext);
   if (!context) throw new Error('usePosts must be used within a PostProvider');
   return context;

@@ -70,7 +70,7 @@ function AppContent() {
   // 3. Render the main application for authenticated users
   return (
     <>
-      <div className="min-h-screen bg-dark w-full lg:grid lg:grid-cols-[auto_1fr_20rem] gap-4">
+      <div className="min-h-screen bg-transparent w-full lg:grid lg:grid-cols-[auto_1fr_20rem] gap-4">
         <Sidebar onOpenPostModal={() => setIsPostModalOpen(true)} />
         <BottomNav />
         <MobileDrawer isOpen={isDrawerOpen} onClose={() => setIsDrawerOpen(false)} />

@@ -1,9 +1,9 @@
 // src/components/shared/PostModal.tsx
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Image, Smile, MapPin } from 'lucide-react';
-import { usePosts } from '../../context/PostContext'; // <-- Import context
-import { useAuth } from '../../context/AuthContext'; // <-- Import auth
+import { X, Image as ImageIcon, Smile, MapPin } from 'lucide-react';
+import { usePosts } from '../../context/PostContext'; 
+import { useAuth } from '../../context/AuthContext'; 
 
 interface PostModalProps {
   isOpen: boolean;
@@ -12,9 +12,12 @@ interface PostModalProps {
 
 export function PostModal({ isOpen, onClose }: PostModalProps) {
   const [content, setContent] = useState('');
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [image, setImage] = useState<string | null>(null);
+  const [location, setLocation] = useState<string | null>(null);
   
-  // Grab the global addPost function and user!
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  
   const { addPost } = usePosts();
   const { user } = useAuth();
 
@@ -24,12 +27,24 @@ export function PostModal({ isOpen, onClose }: PostModalProps) {
     }
   }, [isOpen]);
 
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) setImage(URL.createObjectURL(file));
+  };
+
+  const handleLocationClick = () => {
+    const loc = prompt("Where are you posting this from?");
+    if (loc) setLocation(loc);
+  };
+
   const handlePost = () => {
-    if (!content.trim()) return;
+    if (!content.trim() && !image) return;
     
-    addPost(content, user?.id || ''); // <-- Actually add the post to the global state!
+    addPost(content, user?.id || '', image, location); 
     
     setContent('');
+    setImage(null);
+    setLocation(null);
     onClose();
   };
 
@@ -38,62 +53,62 @@ export function PostModal({ isOpen, onClose }: PostModalProps) {
       {isOpen && (
         <>
           <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             onClick={onClose}
-            className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex justify-center items-start sm:items-center pt-20 sm:pt-0"
+            className="fixed inset-0 bg-black/40 backdrop-blur-md z-50 flex justify-center items-start sm:items-center pt-20 sm:pt-0"
           />
 
           <motion.div
-            initial={{ opacity: 0, scale: 0.95, y: 20 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: 20 }}
-            transition={{ duration: 0.2 }}
-            className="fixed z-50 w-full max-w-[600px] bg-dark rounded-2xl shadow-2xl border border-gray-800 top-20 sm:top-auto sm:top-1/4 left-1/2 -translate-x-1/2 overflow-hidden"
+            initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }}
+            transition={{ duration: 0.2, type: "spring", bounce: 0.25 }}
+            className="fixed z-50 w-full max-w-[600px] bg-gray-900 rounded-2xl shadow-2xl border border-gray-800 top-20 sm:top-auto sm:top-1/4 left-1/2 -translate-x-1/2 overflow-hidden"
           >
-            <div className="flex items-center justify-between p-4 border-b border-gray-800">
-              <button 
-                onClick={onClose}
-                className="p-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-full transition-colors"
-              >
-                <X size={20} />
-              </button>
-              <button className="text-brand font-bold text-sm hover:underline">Drafts</button>
+            <div className="flex items-center justify-between p-4 border-b border-gray-800 bg-transparent">
+              <button onClick={onClose} className="p-2 text-gray-500 hover:text-brand hover:bg-gray-800 rounded-full transition-colors"><X size={20} /></button>
+              <button className="text-brand font-bold text-sm hover:underline px-4 py-1.5 rounded-full hover:bg-brand/10 transition-colors">Drafts</button>
             </div>
 
-            <div className="p-4">
+            <div className="p-4 bg-transparent">
               <div className="flex gap-4">
-                <img 
-                  src="https://api.dicebear.com/7.x/avataaars/svg?seed=Narayan" 
-                  alt="Avatar" 
-                  className="w-12 h-12 rounded-full bg-gray-800 flex-shrink-0"
-                />
+                <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.id || 'default'}`} alt="Avatar" className="w-12 h-12 rounded-full bg-gray-800 flex-shrink-0 shadow-sm" />
                 <div className="flex-1">
                   <textarea
-                    ref={textareaRef}
-                    value={content}
-                    onChange={(e) => setContent(e.target.value)}
+                    ref={textareaRef} value={content} onChange={(e) => setContent(e.target.value)}
                     placeholder="What's happening?"
-                    className="w-full bg-transparent text-xl outline-none resize-none placeholder-gray-500 min-h-[120px]"
+                    className="w-full bg-transparent text-xl text-white outline-none resize-none placeholder-gray-500 min-h-[80px] scrollbar-none"
                   />
+                  
+                  {/* Previews */}
+                  <AnimatePresence>
+                    {image && (
+                      <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} className="relative mt-2 rounded-2xl overflow-hidden border border-gray-800 w-fit max-w-full">
+                        <img src={image} alt="Upload preview" className="max-h-[300px] object-cover" />
+                        <button onClick={() => setImage(null)} className="absolute top-2 right-2 p-1.5 bg-black/60 hover:bg-black text-white rounded-full backdrop-blur-md transition-colors"><X size={16} /></button>
+                      </motion.div>
+                    )}
+                    {location && (
+                      <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="inline-flex items-center gap-1.5 mt-3 px-3 py-1.5 bg-brand/10 text-brand text-xs font-bold rounded-full">
+                        <MapPin size={14} />{location}
+                        <button onClick={() => setLocation(null)} className="ml-1 hover:text-white transition-colors"><X size={14} /></button>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
               </div>
             </div>
 
-            <div className="p-4 border-t border-gray-800 flex items-center justify-between bg-gray-900/30">
+            <div className="p-4 border-t border-gray-800 flex items-center justify-between bg-transparent">
               <div className="flex gap-2 text-brand">
-                <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} className="p-2 hover:bg-brand/10 rounded-full"><Image size={20} /></motion.button>
-                <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} className="p-2 hover:bg-brand/10 rounded-full"><Smile size={20} /></motion.button>
-                <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} className="p-2 hover:bg-brand/10 rounded-full"><MapPin size={20} /></motion.button>
+                <input type="file" accept="image/*" ref={fileInputRef} onChange={handleImageUpload} className="hidden" />
+                <motion.button onClick={() => fileInputRef.current?.click()} whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} className="p-2 hover:bg-gray-800 transition-colors rounded-full"><ImageIcon size={20} /></motion.button>
+                <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} className="p-2 hover:bg-gray-800 transition-colors rounded-full"><Smile size={20} /></motion.button>
+                <motion.button onClick={handleLocationClick} whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} className="p-2 hover:bg-gray-800 transition-colors rounded-full"><MapPin size={20} /></motion.button>
               </div>
 
               <motion.button
-                onClick={handlePost}
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                disabled={!content.trim()}
-                className="bg-brand text-white font-bold py-2 px-6 rounded-full disabled:opacity-50 disabled:cursor-not-allowed"
+                onClick={handlePost} whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} disabled={!content.trim() && !image}
+                // FIXED: Explicit disabled styling to prevent invisible text
+                className="font-bold py-2 px-6 rounded-full shadow-md transition-colors disabled:bg-gray-800 disabled:text-gray-500 bg-brand text-brand-contrast disabled:cursor-not-allowed"
               >
                 Post
               </motion.button>
