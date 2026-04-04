@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { motion } from 'framer-motion';
@@ -10,14 +10,25 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const { signIn, signInWithGoogle } = useAuth();
+  
+  // Brought in the 'user' object from context
+  const { signIn, signInWithGoogle, user } = useAuth();
   const navigate = useNavigate();
+
+  // NEW: Watch for auth state changes!
+  // When you come back from Google, this will detect the user and push them in.
+  useEffect(() => {
+    if (user) {
+      navigate('/community');
+    }
+  }, [user, navigate]);
 
   const handleGoogleSignIn = async () => {
     try {
       setError('');
+      // We removed navigate('/community') from here because the OAuth flow 
+      // forces the page to reload anyway. The useEffect above handles it now!
       await signInWithGoogle();
-      navigate('/community');
     } catch (err: any) {
       setError(err.message || 'Failed to sign in with Google');
     }
@@ -59,7 +70,7 @@ export default function Login() {
               transition={{ delay: 0.2, type: 'spring', stiffness: 200 }}
               className="w-16 h-16 bg-brand rounded-2xl mx-auto mb-4 flex items-center justify-center shadow-lg shadow-brand/20"
             >
-              <Lock className="text-white w-8 h-8" />
+              <Lock className="text-brand-contrast w-8 h-8" />
             </motion.div>
             <h2 className="text-3xl font-extrabold text-white tracking-tight">
               Welcome back
@@ -128,11 +139,11 @@ export default function Login() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full flex items-center justify-center gap-2 py-3.5 px-4 bg-brand hover:bg-brand/90 text-white text-sm font-bold rounded-xl transition-all shadow-lg shadow-brand/25 active:scale-[0.98] disabled:opacity-50 disabled:active:scale-100"
+              className="w-full flex items-center justify-center gap-2 py-3.5 px-4 bg-brand hover:bg-brand/90 text-brand-contrast text-sm font-bold rounded-xl transition-all shadow-lg shadow-brand/25 active:scale-[0.98] disabled:opacity-50 disabled:active:scale-100"
             >
               {loading ? (
                 <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                  <div className="w-4 h-4 border-2 border-brand-contrast/20 border-t-brand-contrast rounded-full animate-spin" />
                   Authenticating...
                 </div>
               ) : (

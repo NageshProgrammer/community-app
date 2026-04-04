@@ -1,128 +1,148 @@
-/* src/index.css */
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Manrope:wght@400;500;600;700&display=swap');
 
 @import "tailwindcss";
 
 @theme {
-  --color-brand: #1DA1F2;
-  --color-dark: #15202B;
-  --color-text-main: #ffffff; /* We add a variable for main text */
+  /* Dark Mode Defaults (Monochrome) */
+  --color-brand: #ffffff;
+  --color-brand-contrast: #000000;
+  --color-dark: #000000;
+  --color-text-main: #ffffff;
 }
 
 @layer base {
+  /* Light Mode Variables */
   :root {
     --background: 0 0% 98%;
     --foreground: 0 0% 7%;
-    --card: 0 0% 96%;
-    --card-foreground: 0 0% 7%;
-    --popover: 0 0% 98%;
-    --popover-foreground: 0 0% 7%;
-    --primary: 0 0% 9%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 0 0% 90%;
-    --secondary-foreground: 0 0% 10%;
-    --muted: 0 0% 88%;
-    --muted-foreground: 0 0% 42%;
-    --accent: 0 0% 85%;
-    --accent-foreground: 0 0% 10%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 0 0% 100%;
     --border: 0 0% 88%;
-    --input: 0 0% 88%;
-    --ring: 0 0% 8%;
-    --radius: 0.5rem;
-    --sidebar-background: 0 0% 98%;
-    --sidebar-foreground: 0 0% 26%;
-    --sidebar-primary: 0 0% 10%;
-    --sidebar-primary-foreground: 0 0% 98%;
-    --sidebar-accent: 0 0% 95%;
-    --sidebar-accent-foreground: 0 0% 10%;
-    --sidebar-border: 0 0% 91%;
-    --sidebar-ring: 0 0% 60%;
-
     --font-display: 'Space Grotesk', sans-serif;
     --font-body: 'Manrope', sans-serif;
   }
 }
 
 @layer base {
-  :root {
-    --background: 210 30% 10%;
+  /* Dark Mode Variables */
+  .dark-theme, :root.dark-theme {
+    --background: 0 0% 0%;
     --foreground: 0 0% 100%;
-    --card: 210 20% 14%;
-    --card-foreground: 0 0% 100%;
-    --border: 210 18% 20%;
-    --input: 210 16% 20%;
-    --ring: 210 40% 40%;
-    --sidebar-background: 210 18% 15%;
-    --sidebar-foreground: 0 0% 80%;
-    --sidebar-primary: 210 30% 12%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-border: 210 18% 22%;
+    --border: 0 0% 15%;
   }
+  
   * {
     border-color: hsl(var(--border));
   }
-  body {
-    background-color: hsl(var(--background));
-    color: hsl(var(--foreground));
-    font-family: var(--font-body);
-    overflow-x: hidden;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-    transition: background-color 0.3s ease, color 0.3s ease;
-  }
-}
-
-/* Force a dark surfaces baseline */
-body.dark-theme, html.dark-theme {
-  --background: 210 30% 10%;
-  --foreground: 0 0% 100%;
-}
-
-body.light-theme, html.light-theme {
-  --background: 0 0% 96%;
-  --foreground: 0 0% 10%;
 }
 
 /* =========================================
-   LIGHT THEME OVERRIDES
+   GLOBAL LIQUID GLASS THEME (DARK MODE)
+   ========================================= */
+body {
+  background-color: var(--color-dark);
+  color: var(--color-text-main);
+  font-family: var(--font-body);
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  transition: background-color 0.4s ease, color 0.4s ease;
+  
+  /* Ambient glowing orbs so the glass has something to refract! */
+  background-image:
+    radial-gradient(circle at 15% 50%, rgba(255, 255, 255, 0.03), transparent 25%),
+    radial-gradient(circle at 85% 30%, rgba(255, 255, 255, 0.03), transparent 25%);
+  background-attachment: fixed;
+}
+
+/* Convert Primary Containers to Frosted Glass */
+.bg-gray-900,
+.bg-dark\/80 {
+  background-color: rgba(20, 20, 20, 0.4) !important;
+  backdrop-filter: blur(20px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(180%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.06) !important;
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3) !important;
+}
+
+/* Convert Secondary Containers (Hover states, inputs) to Glass */
+.bg-gray-800 {
+  background-color: rgba(40, 40, 40, 0.3) !important;
+  backdrop-filter: blur(12px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(12px) saturate(180%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.04) !important;
+}
+
+/* Make borders delicate for the glass effect */
+.border-gray-800 {
+  border-color: rgba(255, 255, 255, 0.06) !important;
+}
+
+/* Glass Hover Effects */
+.hover\:bg-gray-900:hover,
+.hover\:bg-gray-800:hover {
+  background-color: rgba(60, 60, 60, 0.3) !important;
+}
+
+/* =========================================
+   LIGHT THEME LIQUID GLASS OVERRIDES
    ========================================= */
 .light-theme {
-  --color-dark: #ffffff;
-  --color-text-main: #0f1419; /* Flips the body text to dark! */
+  --color-brand: #0f1419; 
+  --color-brand-contrast: #ffffff; 
+  --color-dark: #f0f2f5; /* Slightly off-white so the pure white glass pops */
+  --color-text-main: #0f1419; 
 }
 
-.light-theme .bg-gray-900 {
-  background-color: #f7f9f9 !important;
+.light-theme body {
+  /* Dark ambient orbs for light mode */
+  background-image:
+    radial-gradient(circle at 15% 50%, rgba(0, 0, 0, 0.03), transparent 25%),
+    radial-gradient(circle at 85% 30%, rgba(0, 0, 0, 0.03), transparent 25%);
 }
 
+/* Light Mode Glass Panels (Like Apple iOS) */
+.light-theme .bg-gray-900,
+.light-theme .bg-dark\/80 {
+  background-color: rgba(255, 255, 255, 0.6) !important;
+  backdrop-filter: blur(24px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(180%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.8) !important; /* White reflection edge */
+  box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.07) !important;
+}
+
+/* Light Mode Secondary Glass */
 .light-theme .bg-gray-800 {
-  background-color: #eff3f4 !important;
+  background-color: rgba(255, 255, 255, 0.4) !important;
+  backdrop-filter: blur(12px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(12px) saturate(180%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.5) !important;
 }
 
+/* Light Mode Soft Borders */
 .light-theme .border-gray-800 {
-  border-color: #eff3f4 !important;
+  border-color: rgba(0, 0, 0, 0.06) !important;
 }
 
+.light-theme .hover\:bg-gray-900:hover,
+.light-theme .hover\:bg-gray-800:hover,
+.light-theme .hover\:bg-gray-800\/50:hover {
+  background-color: rgba(255, 255, 255, 0.9) !important;
+}
+
+/* Fix text colors in Light Mode */
 .light-theme .text-gray-500,
 .light-theme .text-gray-400 {
   color: #536471 !important;
 }
 
-/* Makes inactive sidebar icons dark in light mode */
 .light-theme .text-gray-300 {
+  color: #0f1419 !important; 
+}
+
+/* Forces text-white to be dark, BUT ignores brand-contrast so buttons stay white text! */
+.light-theme .text-white:not(.bg-brand):not(.text-brand-contrast) {
   color: #0f1419 !important;
 }
 
-/* Forces text-white to be dark, BUT uses :not(.bg-brand)
-  so the text inside your blue "Post" button stays white!
-*/
-.light-theme .text-white:not(.bg-brand) {
-  color: #0f1419 !important;
-}
-
-/* Fixes the Follow buttons specifically */
 .light-theme .bg-white {
   background-color: #0f1419 !important;
   color: #ffffff !important;
@@ -135,16 +155,4 @@ body.light-theme, html.light-theme {
 .hide-scrollbar {
   -ms-overflow-style: none; 
   scrollbar-width: none;  
-}
-
-/* Fix the hover states in light mode */
-.light-theme .hover\:bg-gray-900:hover,
-.light-theme .hover\:bg-gray-900\/50:hover,
-.light-theme .hover\:bg-gray-800\/50:hover {
-  background-color: #eff3f4 !important;
-}
-
-/* Fix active link background in sidebar */
-.light-theme .bg-gray-900 {
-  background-color: #eff3f4 !important;
 }

@@ -1,0 +1,20 @@
+[
+  {
+    "id": "ef280e78-062f-4d05-8bf6-223c9910ae43",
+    "participants": [
+      "3e402173-b1e8-491c-87c9-677d125d7cad",
+      "4379486f-060e-44ca-a87e-b9358f649124"
+    ],
+    "updatedAt": "2026-04-04T07:48:57.584Z",
+    "lastMessage": "hi"
+  },
+  {
+    "id": "bd30b856-3563-410d-bc49-9dd02dfab460",
+    "participants": [
+      "3e402173-b1e8-491c-87c9-677d125d7cad",
+      "d8b0abad-94e5-4272-80b9-69a633849fb5"
+    ],
+    "updatedAt": "2026-04-04T08:56:54.945Z",
+    "lastMessage": "a"
+  }
+]

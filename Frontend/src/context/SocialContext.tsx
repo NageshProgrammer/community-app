@@ -6,7 +6,8 @@ import { useAuth } from './AuthContext';
 interface SocialContextType {
   followingIds: string[];
   followerCounts: Record<string, number>;
-  toggleFollow: (id: string, currentFollowers: number) => Promise<void>;
+  // FIXED: Made currentFollowers optional so it doesn't break other components
+  toggleFollow: (id: string, currentFollowers?: number) => Promise<void>;
   searchQuery: string;
   setSearchQuery: (query: string) => void;
   loadingSocial: boolean;
@@ -43,7 +44,8 @@ export function SocialProvider({ children }: { children: ReactNode }) {
     fetchFollowing();
   }, [user]);
 
-  const toggleFollow = async (targetId: string, currentCountOnUI: number) => {
+  // FIXED: Defaulted currentCountOnUI to 0 if not provided
+  const toggleFollow = async (targetId: string, currentCountOnUI: number = 0) => {
     if (!user || !targetId || user.id === targetId) return;
 
     const isFollowing = followingIds.includes(targetId);

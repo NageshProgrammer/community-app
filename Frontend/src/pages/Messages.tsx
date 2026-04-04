@@ -177,7 +177,7 @@ export default function Messages() {
               <motion.span 
                 initial={{ scale: 0 }}
                 animate={{ scale: 1 }}
-                className="bg-brand text-white text-[10px] px-2 py-1 rounded-full leading-none"
+                className="bg-brand text-brand-contrast font-bold text-[10px] px-2 py-1 rounded-full leading-none"
               >
                 {totalUnread}
               </motion.span>
@@ -187,13 +187,13 @@ export default function Messages() {
           <div className="flex items-center gap-2">
             <button 
               onClick={markAllAsRead}
-              className="p-2 text-gray-400 hover:text-brand hover:bg-brand/10 rounded-full transition-colors"
+              className="p-2 text-gray-400 hover:text-brand transition-colors"
               title="Mark all as read"
             >
               <CheckCheck className="w-5 h-5" />
             </button>
             <button 
-              className="p-2 text-brand hover:bg-brand/10 rounded-full transition-colors"
+              className="p-2 text-brand transition-colors"
               title="New Message"
             >
               <Edit className="w-5 h-5" />
@@ -201,7 +201,7 @@ export default function Messages() {
           </div>
         </div>
 
-        {/* Search Bar */}
+        {/* Search Bar - Fixed class for Glass effect */}
         <div className="px-4 mb-6">
           <div className="relative group">
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -209,7 +209,7 @@ export default function Messages() {
             </div>
             <input
               type="text"
-              className="block w-full pl-10 pr-3 py-2.5 border border-gray-800 rounded-xl leading-5 bg-gray-900/50 text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-brand focus:border-brand transition-all sm:text-sm"
+              className="block w-full pl-10 pr-3 py-2.5 border border-gray-800 rounded-xl leading-5 bg-gray-900 text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-brand focus:border-brand transition-all sm:text-sm"
               placeholder="Search messages..."
               value={activeSearch}
               onChange={(e) => setLocalSearch(e.target.value)}
@@ -249,8 +249,8 @@ export default function Messages() {
           </button>
         </div>
 
-        {/* Messages List Container */}
-        <div className="w-full md:rounded-2xl border border-gray-800 overflow-hidden bg-gray-900/20 backdrop-blur-sm min-h-[400px]">
+        {/* Messages List Container - Applied Glass effect */}
+        <div className="w-full md:rounded-2xl border border-gray-800 overflow-hidden bg-gray-900 min-h-[400px]">
           {loading ? (
             <div className="flex items-center justify-center py-20">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand"></div>
@@ -259,7 +259,7 @@ export default function Messages() {
             <motion.div 
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              className="flex flex-col items-center justify-center py-20 text-center bg-gray-900"
+              className="flex flex-col items-center justify-center py-20 text-center bg-transparent"
             >
               <div className="bg-gray-800 p-6 rounded-full mb-4">
                 <MessageSquareOff className="w-10 h-10 text-gray-500" />
@@ -271,7 +271,7 @@ export default function Messages() {
               {activeSearch && (
                 <button 
                   onClick={() => {setLocalSearch(''); setSelectedChatId(null)}}
-                  className="mt-6 px-6 py-2 bg-brand text-white rounded-full font-bold hover:bg-brand/80 transition-all"
+                  className="mt-6 px-6 py-2 bg-brand text-brand-contrast rounded-full font-bold hover:opacity-90 transition-all"
                 >
                   Clear search
                 </button>
@@ -288,7 +288,7 @@ export default function Messages() {
                     exit={{ opacity: 0, scale: 0.95 }}
                     transition={{ duration: 0.2 }}
                     key={chat.id}
-                    className="group relative flex items-center gap-4 p-4 cursor-pointer transition-colors border-b border-gray-800 last:border-b-0 hover:bg-gray-800/50"
+                    className="group relative flex items-center gap-4 p-4 cursor-pointer transition-colors border-b border-gray-800 last:border-b-0 hover:bg-gray-800"
                     onClick={() => {
                       setSelectedChatId(chat.id);
                       if (chat.unreadCount > 0) {
@@ -298,11 +298,11 @@ export default function Messages() {
                   >
                     {/* Avatar with Online Status */}
                     <div className="relative flex-shrink-0">
-                      <div className={`w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-lg ${chat.avatarColor}`}>
+                      <div className={`w-12 h-12 rounded-full flex items-center justify-center text-brand-contrast font-bold text-lg ${chat.avatarColor}`}>
                         {chat.initials}
                       </div>
                       {chat.isOnline && (
-                        <div className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-green-500 border-2 border-gray-900 rounded-full"></div>
+                        <div className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-green-500 border-2 border-transparent rounded-full"></div>
                       )}
                     </div>
 
@@ -329,7 +329,7 @@ export default function Messages() {
                         
                         {/* Unread Badge */}
                         {chat.unreadCount > 0 && (
-                          <div className="flex-shrink-0 w-5 h-5 flex items-center justify-center bg-brand rounded-full text-white text-[10px] font-bold">
+                          <div className="flex-shrink-0 w-5 h-5 flex items-center justify-center bg-brand rounded-full text-brand-contrast text-[10px] font-bold">
                             {chat.unreadCount}
                           </div>
                         )}
@@ -347,7 +347,7 @@ export default function Messages() {
       <motion.button 
         whileHover={{ scale: 1.1 }}
         whileTap={{ scale: 0.9 }}
-        className="fixed bottom-24 right-6 p-4 bg-brand text-white rounded-full shadow-lg shadow-brand/40 md:hidden z-10"
+        className="fixed bottom-24 right-6 p-4 bg-brand text-brand-contrast rounded-full shadow-lg shadow-brand/40 md:hidden z-10"
       >
         <Plus size={24} />
       </motion.button>

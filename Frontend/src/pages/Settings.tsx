@@ -17,21 +17,33 @@ import { useNavigate } from 'react-router-dom';
 
 type TabType = 'account' | 'privacy' | 'notifications' | 'appearance';
 
-// Reusable Toggle Component perfectly themed for Light/Dark mode
-const ToggleSwitch = ({ checked, onChange }: { checked: boolean, onChange: () => void }) => (
-  <button
-    onClick={onChange}
-    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-brand focus:ring-offset-2 focus:ring-offset-transparent ${
-      checked ? 'bg-brand' : 'bg-gray-800'
-    }`}
-  >
-    <span
-      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-        checked ? 'translate-x-6' : 'translate-x-1'
-      }`}
-    />
-  </button>
-);
+// Theme-Aware Toggle Component
+const ToggleSwitch = ({ checked, onChange }: { checked: boolean, onChange: () => void }) => {
+  const { theme } = useTheme();
+  
+  return (
+    <button
+      onClick={onChange}
+      className="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none shadow-inner"
+      style={{
+        // Dynamically swap the background track color based on Theme and Checked state
+        backgroundColor: checked 
+          ? 'var(--color-brand)' 
+          : (theme === 'light' ? '#cbd5e1' : '#3f3f46') // Light gray in Light Mode, Dark gray in Dark Mode
+      }}
+    >
+      <span
+        className={`inline-block h-4 w-4 transform rounded-full transition-transform shadow-md ${
+          checked ? 'translate-x-6' : 'translate-x-1'
+        }`}
+        style={{ 
+          // Flips the knob color dynamically so it never turns invisible!
+          backgroundColor: checked ? 'var(--color-brand-contrast)' : '#ffffff'
+        }} 
+      />
+    </button>
+  );
+};
 
 export default function Settings() {
   const [activeTab, setActiveTab] = useState<TabType>('account');
@@ -115,8 +127,8 @@ export default function Settings() {
           </div>
         </div>
 
-        {/* Settings Content Container */}
-        <div className="w-full md:rounded-2xl border border-gray-800 overflow-hidden bg-transparent mb-8">
+        {/* Settings Content Container - Liquid Glass theme */}
+        <div className="w-full md:rounded-2xl border border-gray-800 overflow-hidden bg-gray-900 mb-8">
           <AnimatePresence mode="wait">
             
             {/* ACCOUNT TAB */}
@@ -137,7 +149,7 @@ export default function Settings() {
                       <input 
                         type="text" 
                         defaultValue={user?.email?.split('@')[0] || 'username'}
-                        className="w-full bg-gray-900 border border-gray-800 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-all sm:text-sm"
+                        className="w-full bg-gray-800 border border-gray-800 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-all sm:text-sm"
                       />
                     </div>
                     <div>
@@ -145,7 +157,7 @@ export default function Settings() {
                       <input 
                         type="email" 
                         defaultValue={user?.email || 'email@example.com'}
-                        className="w-full bg-gray-900 border border-gray-800 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-all sm:text-sm"
+                        className="w-full bg-gray-800 border border-gray-800 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-all sm:text-sm"
                       />
                     </div>
                   </div>
@@ -153,7 +165,7 @@ export default function Settings() {
                     <button 
                       onClick={handleSaveChanges}
                       disabled={isSaving}
-                      className="px-6 py-2 bg-brand text-white text-sm font-bold rounded-full hover:bg-brand/90 transition-all disabled:opacity-50"
+                      className="px-6 py-2 bg-brand text-brand-contrast text-sm font-bold rounded-full hover:opacity-90 transition-all disabled:opacity-50"
                     >
                       {isSaving ? 'Saving...' : 'Save Changes'}
                     </button>
@@ -334,12 +346,12 @@ export default function Settings() {
                     
                     <div 
                       onClick={() => theme === 'dark' && toggleTheme()}
-                      className={`rounded-xl p-1 bg-white cursor-pointer transition-all ${
+                      className={`rounded-xl p-1 bg-[#f8fafc] cursor-pointer transition-all ${
                         theme === 'light' ? 'border-2 border-brand ring-2 ring-brand/20' : 'border border-gray-200 opacity-60 hover:opacity-100'
                       }`}
                     >
-                      <div className="bg-gray-50 border border-gray-200 rounded-lg h-24 w-full flex flex-col justify-between p-3">
-                        <div className="w-1/2 h-3 bg-gray-200 rounded-full" />
+                      <div className="bg-[#e2e8f0] border border-gray-200 rounded-lg h-24 w-full flex flex-col justify-between p-3">
+                        <div className="w-1/2 h-3 bg-[#cbd5e1] rounded-full" />
                         <div className="w-3/4 h-3 bg-brand rounded-full" />
                       </div>
                       <p className="text-center text-sm font-medium text-gray-900 mt-2 mb-1">Light Mode</p>
@@ -356,7 +368,7 @@ export default function Settings() {
         <div className="px-4 pb-8">
           <button 
             onClick={handleLogout}
-            className="w-full flex items-center justify-center gap-2 p-3 rounded-xl border border-gray-800 bg-gray-900 text-gray-400 hover:text-red-500 hover:bg-red-500/5 transition-all font-bold"
+            className="w-full flex items-center justify-center gap-2 p-3 rounded-xl border border-gray-800 bg-gray-900 text-gray-500 hover:text-red-500 hover:bg-red-500/10 transition-all font-bold shadow-sm"
           >
             <LogOut className="w-5 h-5" />
             Log Out

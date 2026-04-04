@@ -1,12 +1,12 @@
 // src/App.tsx
 import { useState } from 'react';
-import { Routes, Route, useLocation } from 'react-router-dom';
+import { Routes, Route, useLocation, Navigate } from 'react-router-dom';
 import { AnimatePresence } from 'framer-motion';
 
 // Context
 import { PostProvider } from './context/PostContext';
 import { ThemeProvider } from './context/ThemeContext';
-import { AuthProvider } from './context/AuthContext';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import { SocialProvider } from './context/SocialContext';
 
 // Layout Components
@@ -14,7 +14,7 @@ import { Sidebar } from './components/layout/Sidebar';
 import { BottomNav } from './components/layout/BottomNav';
 import { MobileDrawer } from './components/layout/MobileDrawer';
 import { RightSidebar } from './components/layout/RightSidebar';
-import { PostModal } from './components/shared/PostModal'; // <-- Import the new modal
+import { PostModal } from './components/shared/PostModal';
 
 // Pages
 import { Home } from './pages/Home';
@@ -27,33 +27,24 @@ import Settings from './pages/Settings';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
 
-// Protected Route Component
-import { useAuth } from './context/AuthContext';
-import { Navigate } from 'react-router-dom';
-
 function AppContent() {
   const location = useLocation();
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isPostModalOpen, setIsPostModalOpen] = useState(false);
-  const { user } = useAuth();
+  
+  // Destructure loading from useAuth to prevent the race condition
+  const { user, loading } = useAuth();
 
-  const getHeaderTitle = () => {
-    switch (location.pathname) {
-      case '/community':
-        return '';
-      case '/messages':
-        return 'Messages';
-      case '/notifications':
-        return 'Notifications';
-      case '/profile':
-        return 'Profile';
-      case '/settings':
-        return 'Settings';
-      default:
-        return 'Community';
-    }
-  };
+  // 1. THE FIX: Wait for Supabase to finish checking the URL token before routing
+  if (loading) {
+    return (
+      <div className="min-h-screen w-full flex items-center justify-center bg-dark">
+        <div className="w-8 h-8 border-4 border-brand border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
 
+  // 2. Route guards can now safely run because loading is complete
   if (location.pathname === '/') {
     return <Navigate to="/community" replace />;
   }
@@ -76,29 +67,17 @@ function AppContent() {
     return <Navigate to="/login" replace />;
   }
 
+  // 3. Render the main application for authenticated users
   return (
     <>
       <div className="min-h-screen bg-dark w-full lg:grid lg:grid-cols-[auto_1fr_20rem] gap-4">
-        {/* Pass the function to open the modal to the Sidebar */}
         <Sidebar onOpenPostModal={() => setIsPostModalOpen(true)} />
-
         <BottomNav />
         <MobileDrawer isOpen={isDrawerOpen} onClose={() => setIsDrawerOpen(false)} />
-
-        {/* Render the Global Post Modal */}
         <PostModal isOpen={isPostModalOpen} onClose={() => setIsPostModalOpen(false)} />
 
         <main className="flex-1 border-r border-gray-800 min-h-screen pb-20 sm:pb-0 overflow-x-hidden">
-          <header className="sticky top-0 bg-dark/80 backdrop-blur-md border-b border-gray-800 p-4 z-40 flex items-center gap-4">
-            <button className="sm:hidden flex-shrink-0" onClick={() => setIsDrawerOpen(true)}>
-              <img
-                src="https://api.dicebear.com/7.x/avataaars/svg?seed=Narayan"
-                alt="Menu"
-                className="w-8 h-8 rounded-full bg-gray-800"
-              />
-            </button>
-            <h1 className="text-xl font-bold">{getHeaderTitle()}</h1>
-          </header>
+          
 
           <AnimatePresence mode="wait">
             <Routes location={location} key={location.pathname}>
