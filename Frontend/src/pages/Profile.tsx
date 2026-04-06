@@ -1,14 +1,21 @@
 // src/pages/Profile.tsx
-import { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
-import { Calendar, Link as LinkIcon, ArrowLeft, MessageSquare } from 'lucide-react';
-import { Post, type PostData } from '../components/feed/Post';
-import { useAuth } from '../context/AuthContext';
-import { supabase } from '../utils/supabase';
-import { useParams, useNavigate } from 'react-router-dom';
-import { useSocial } from '../context/SocialContext';
+import { useState, useEffect, useRef } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import {
+  Calendar,
+  Link as LinkIcon,
+  ArrowLeft,
+  MessageSquare,
+  Camera,
+  X,
+} from "lucide-react";
+import { Post, type PostData } from "../components/feed/Post";
+import { useAuth } from "../context/AuthContext";
+import { supabase } from "../utils/supabase";
+import { useParams, useNavigate } from "react-router-dom";
+import { useSocial } from "../context/SocialContext";
 
-const TABS = ['Posts', 'Replies', 'Media', 'Likes'];
+const TABS = ["Posts", "Replies", "Media", "Likes"];
 
 interface UserProfile {
   id: string;
@@ -23,16 +30,21 @@ interface UserProfile {
 export function Profile() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState('Posts');
+  const [activeTab, setActiveTab] = useState("Posts");
   const [posts, setPosts] = useState<PostData[]>([]);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // Edit States
   const [isEditing, setIsEditing] = useState(false);
-  const [fullName, setFullName] = useState('');
-  const [username, setUsername] = useState('');
-  const [bio, setBio] = useState('');
-  const [website, setWebsite] = useState('');
-  const [avatarUrl, setAvatarUrl] = useState('');
+  const [fullName, setFullName] = useState("");
+  const [username, setUsername] = useState("");
+  const [bio, setBio] = useState("");
+  const [website, setWebsite] = useState("");
+  const [avatarUrl, setAvatarUrl] = useState("");
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const [followerCount, setFollowerCount] = useState(0);
   const [followingCount, setFollowingCount] = useState(0);
   const [followingLoading, setFollowingLoading] = useState(false);
@@ -41,7 +53,9 @@ export function Profile() {
 
   const targetUserId = id || currentUser?.id;
   const isOwnProfile = !id || id === currentUser?.id;
-  const isFollowing = targetUserId ? followingIds.includes(targetUserId) : false;
+  const isFollowing = targetUserId
+    ? followingIds.includes(targetUserId)
+    : false;
 
   useEffect(() => {
     const loadProfile = async () => {
@@ -49,31 +63,29 @@ export function Profile() {
       setLoading(true);
 
       try {
-        // Fetch Profile + Counts in one query
         const { data: profileData, error: profileError } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', targetUserId)
+          .from("profiles")
+          .select("*")
+          .eq("id", targetUserId)
           .maybeSingle();
 
         if (profileError) {
-          console.warn('Profile select warning', profileError);
+          console.warn("Profile select warning", profileError);
         }
 
         let activeProfile = profileData as any | null;
 
-        // If it's my profile and it doesn't exist, create it
         if (!activeProfile && isOwnProfile && currentUser) {
-          const defaultUsername = currentUser.email?.split('@')[0] || 'user';
+          const defaultUsername = currentUser.email?.split("@")[0] || "user";
           const { data: upsertData, error: upsertError } = await supabase
-            .from('profiles')
+            .from("profiles")
             .upsert({
               id: currentUser.id,
               username: defaultUsername,
               full_name: defaultUsername,
               avatar_url: `https://api.dicebear.com/7.x/avataaars/svg?seed=${currentUser.id}`,
-              bio: '',
-              website: ''
+              bio: "",
+              website: "",
             })
             .select()
             .single();
@@ -82,75 +94,83 @@ export function Profile() {
           activeProfile = upsertData as any;
         }
 
-        // Fallback for missing profile
         if (!activeProfile) {
           activeProfile = {
             id: targetUserId,
             username: `user_${targetUserId.substring(0, 5)}`,
             full_name: `User ${targetUserId.substring(0, 5)}`,
             avatar_url: `https://api.dicebear.com/7.x/avataaars/svg?seed=${targetUserId}`,
-            bio: 'No bio yet.',
-            website: '',
+            bio: "No bio yet.",
+            website: "",
             created_at: new Date().toISOString(),
             followers: [{ count: 0 }],
-            following: [{ count: 0 }]
+            following: [{ count: 0 }],
           };
         }
 
         setProfile(activeProfile as UserProfile);
-        setFullName(activeProfile.full_name || '');
-        setUsername(activeProfile.username || '');
-        setBio(activeProfile.bio || '');
-        setWebsite(activeProfile.website || '');
-        setAvatarUrl(activeProfile.avatar_url || '');
+        setFullName(activeProfile.full_name || "");
+        setUsername(activeProfile.username || "");
+        setBio(activeProfile.bio || "");
+        setWebsite(activeProfile.website || "");
+        setAvatarUrl(activeProfile.avatar_url || "");
 
-        // Fetch Real Counts separately for accuracy
         const { count: fetchedFollowers } = await supabase
-          .from('follows')
-          .select('*', { count: 'exact', head: true })
-          .eq('following_user_id', targetUserId);
-        
+          .from("follows")
+          .select("*", { count: "exact", head: true })
+          .eq("following_user_id", targetUserId);
+
         const { count: fetchedFollowing } = await supabase
-          .from('follows')
-          .select('*', { count: 'exact', head: true })
-          .eq('follower_id', targetUserId);
+          .from("follows")
+          .select("*", { count: "exact", head: true })
+          .eq("follower_id", targetUserId);
 
         setFollowerCount(fetchedFollowers || 0);
         setFollowingCount(fetchedFollowing || 0);
 
-        // Fetch user posts
         const { data: postsData } = await supabase
-          .from('posts')
-          .select(`
+          .from("posts")
+          .select(
+            `
             *,
             likes:post_likes!post_id(count),
             comments:post_comments!post_id(count),
             reposts:post_reposts!post_id(count)
-          `)
-          .eq('author_id', targetUserId)
-          .order('created_at', { ascending: false });
+          `,
+          )
+          .eq("author_id", targetUserId)
+          .order("created_at", { ascending: false });
 
         if (postsData) {
-          const mappedPosts: PostData[] = (postsData as any[]).map((post: any) => ({
-            id: post.id,
-            author: {
-              id: targetUserId,
-              name: activeProfile?.full_name || activeProfile?.username || `User ${targetUserId.substring(0, 5)}`,
-              handle: activeProfile?.username || `user_${targetUserId.substring(0, 5)}`,
-              avatar: activeProfile?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${targetUserId}`
-            },
-            content: post.content,
-            timestamp: new Date(post.created_at).toLocaleString(),
-            likes: post.likes?.[0]?.count || 0,
-            comments: post.comments?.[0]?.count || 0,
-            reposts: post.reposts?.[0]?.count || 0,
-            isLiked: false,
-            isReposted: false,
-          }));
+          const mappedPosts: PostData[] = (postsData as any[]).map(
+            (post: any) => ({
+              id: post.id,
+              author: {
+                id: targetUserId,
+                name:
+                  activeProfile?.full_name ||
+                  activeProfile?.username ||
+                  `User ${targetUserId.substring(0, 5)}`,
+                handle:
+                  activeProfile?.username ||
+                  `user_${targetUserId.substring(0, 5)}`,
+                avatar:
+                  activeProfile?.avatar_url ||
+                  `https://api.dicebear.com/7.x/avataaars/svg?seed=${targetUserId}`,
+              },
+              content: post.content,
+              timestamp: new Date(post.created_at).toLocaleString(),
+              likes: post.likes?.[0]?.count || 0,
+              comments: post.comments?.[0]?.count || 0,
+              reposts: post.reposts?.[0]?.count || 0,
+              isLiked: false,
+              isReposted: false,
+            }),
+          );
           setPosts(mappedPosts);
         }
       } catch (err) {
-        console.error('Error loading profile:', err);
+        console.error("Error loading profile:", err);
       } finally {
         setLoading(false);
       }
@@ -159,13 +179,26 @@ export function Profile() {
     loadProfile();
   }, [targetUserId, isOwnProfile, currentUser, followerCounts]);
 
+  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setAvatarUrl(URL.createObjectURL(file));
+    }
+  };
+
+  const handleRemoveAvatar = () => {
+    setAvatarUrl(
+      `https://api.dicebear.com/7.x/avataaars/svg?seed=${currentUser?.id}`,
+    );
+  };
+
   const handleUpdateProfile = async () => {
     if (!currentUser || !profile) return;
     setLoading(true);
 
     try {
       const { data, error } = await supabase
-        .from('profiles')
+        .from("profiles")
         .upsert({
           id: currentUser.id,
           username: username || profile.username,
@@ -184,7 +217,7 @@ export function Profile() {
         setIsEditing(false);
       }
     } catch (err) {
-      console.error('Error updating profile:', err);
+      console.error("Error updating profile:", err);
     } finally {
       setLoading(false);
     }
@@ -192,7 +225,7 @@ export function Profile() {
 
   const handleToggleFollow = async () => {
     if (!targetUserId || followingLoading) return;
-    
+
     setFollowingLoading(true);
     await toggleFollow(targetUserId, followerCount);
     setFollowingLoading(false);
@@ -206,38 +239,91 @@ export function Profile() {
       transition={{ duration: 0.2 }}
       className="w-full pb-20 sm:pb-0"
     >
-      <header className="sticky top-0 bg-dark/80 backdrop-blur-md border-b border-gray-800 p-2 z-40 flex items-center gap-6">
-          <button onClick={() => navigate(-1)} className="p-2 hover:bg-gray-800 rounded-full transition-colors">
-            <ArrowLeft size={20} />
-          </button>
-          <div>
-            <h2 className="text-xl font-bold">{profile?.full_name}</h2>
-            <p className="text-xs text-gray-500">{posts.length} Posts</p>
-          </div>
+      <header className="sticky top-0 bg-white/80 dark:bg-dark/80 backdrop-blur-md border-b border-gray-200 dark:border-gray-800 p-2 z-40 flex items-center gap-6">
+        <button
+          onClick={() => navigate(-1)}
+          className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors text-gray-800 dark:text-white"
+        >
+          <ArrowLeft size={20} />
+        </button>
+        <div>
+          <h2 className="text-xl font-bold text-gray-900 dark:text-white">{profile?.full_name}</h2>
+          <p className="text-xs text-gray-500">{posts.length} Posts</p>
+        </div>
       </header>
 
       {/* Banner Area */}
       <div className="relative h-32 sm:h-48 bg-gradient-to-r from-brand to-blue-900">
-        <div className="absolute -bottom-16 left-4 w-32 h-32 bg-dark rounded-full border-4 border-dark overflow-hidden z-10">
+        {/* AVATAR WRAPPER */}
+        <div className="absolute -bottom-16 left-4 w-32 h-32 bg-white dark:bg-dark rounded-full border-4 border-white dark:border-dark overflow-hidden z-20 group shadow-lg">
           <img
-            src={profile?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${profile?.id || 'user'}`}
-            alt={profile?.full_name || 'User Avatar'}
-            className="w-full h-full object-cover bg-gray-800"
+            src={
+              isEditing
+                ? avatarUrl
+                : profile?.avatar_url ||
+                  `https://api.dicebear.com/7.x/avataaars/svg?seed=${profile?.id || "user"}`
+            }
+            alt={profile?.full_name || "User Avatar"}
+            className="w-full h-full object-cover bg-gray-100 dark:bg-gray-800"
           />
+
+          {/* EDIT MODE AVATAR OVERLAY */}
+          <AnimatePresence>
+            {isEditing && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                // Adapts overlay dimness based on theme
+                className="absolute inset-0 bg-white/20 dark:bg-black/30 hover:bg-white/40 dark:hover:bg-black/50 transition-colors flex items-center justify-center gap-2"
+              >
+                <input
+                  type="file"
+                  accept="image/*"
+                  ref={fileInputRef}
+                  onChange={handleAvatarChange}
+                  className="hidden"
+                />
+
+                {/* FIXED: Buttons now use pure white frosted glass with dark icons in Light mode, and black glass with white icons in Dark mode! */}
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="p-2 bg-white/90 dark:bg-black/60 backdrop-blur-md border border-gray-200 dark:border-white/20 text-gray-800 dark:text-white hover:text-white hover:border-brand dark:hover:bg-green-500 rounded-full transition-colors shadow-lg"
+                  title="Upload new photo"
+                >
+                  <Camera size={18} />
+                </button>
+
+                <button
+                  onClick={handleRemoveAvatar}
+                  className="p-2 bg-white/90 dark:bg-black/60 backdrop-blur-md border border-gray-200 dark:border-white/20 text-gray-800 dark:text-white hover:bg-red-500 hover:text-white hover:border-red-500 dark:hover:bg-red-500 rounded-full transition-colors shadow-lg"
+                  title="Remove photo"
+                >
+                  <X size={18} />
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </div>
 
       <div className="px-4 pt-3 pb-4">
-        <div className="flex justify-end mb-4">
+        <div className="flex justify-end mb-4 relative z-10">
           {isOwnProfile ? (
             <motion.button
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
-              onClick={() => isEditing ? handleUpdateProfile() : setIsEditing(true)}
-              className="px-4 py-1.5 font-bold rounded-full border border-gray-500 hover:bg-gray-500/10 transition-colors"
+              onClick={() =>
+                isEditing ? handleUpdateProfile() : setIsEditing(true)
+              }
+              className="px-4 py-1.5 font-bold rounded-full border border-gray-300 dark:border-gray-500 hover:bg-black/5 dark:hover:bg-white/10 transition-colors text-gray-900 dark:text-white"
               disabled={loading}
             >
-              {isEditing ? (loading ? 'Saving...' : 'Save Profile') : 'Edit Profile'}
+              {isEditing
+                ? loading
+                  ? "Saving..."
+                  : "Save Profile"
+                : "Edit Profile"}
             </motion.button>
           ) : (
             <div className="flex gap-2">
@@ -245,25 +331,29 @@ export function Profile() {
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={() => navigate(`/messages?user_id=${targetUserId}`)}
-                className="p-2 border border-gray-500 rounded-full hover:bg-gray-800 transition-colors"
+                className="p-2 border border-gray-300 dark:border-gray-500 rounded-full hover:bg-black/5 dark:hover:bg-gray-800 transition-colors"
                 title="Message"
               >
-                <MessageSquare size={20} className="text-white" />
+                <MessageSquare size={20} className="text-gray-900 dark:text-white" />
               </motion.button>
-              
+
               <motion.button
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={handleToggleFollow}
                 disabled={followingLoading}
-                className={`px-6 py-1.5 font-bold rounded-full transition-colors ${followingLoading ? 'opacity-50 cursor-not-allowed' : ''} ${isFollowing ? 'border border-gray-500 hover:bg-red-500/10 hover:border-red-500 hover:text-red-500 group' : 'bg-white text-dark hover:bg-gray-200'}`}
+                className={`px-6 py-1.5 font-bold rounded-full transition-colors ${followingLoading ? "opacity-50 cursor-not-allowed" : ""} ${isFollowing ? "border border-gray-300 dark:border-gray-500 hover:bg-red-50 hover:border-red-500 hover:text-red-500 dark:hover:bg-red-500/10 group" : "bg-dark text-white dark:bg-white dark:text-dark hover:opacity-90"}`}
               >
-                {followingLoading ? 'Processing...' : (isFollowing ? (
+                {followingLoading ? (
+                  "Processing..."
+                ) : isFollowing ? (
                   <>
                     <span className="group-hover:hidden">Following</span>
                     <span className="hidden group-hover:inline">Unfollow</span>
                   </>
-                ) : 'Follow')}
+                ) : (
+                  "Follow"
+                )}
               </motion.button>
             </div>
           )}
@@ -271,74 +361,178 @@ export function Profile() {
 
         <div className="mt-16">
           {isEditing ? (
-            <div className="space-y-3">
-              <input value={fullName} onChange={e => setFullName(e.target.value)} placeholder="Full name" className="w-full p-2 border border-gray-700 rounded bg-dark" />
-              <input value={username} onChange={e => setUsername(e.target.value)} placeholder="Username" className="w-full p-2 border border-gray-700 rounded bg-dark" />
-              <textarea value={bio} onChange={e => setBio(e.target.value)} placeholder="Bio" className="w-full p-2 border border-gray-700 rounded bg-dark" rows={3} />
-              <input value={website} onChange={e => setWebsite(e.target.value)} placeholder="Website URL" className="w-full p-2 border border-gray-700 rounded bg-dark" />
-              <input value={avatarUrl} onChange={e => setAvatarUrl(e.target.value)} placeholder="Avatar URL (Image Path)" className="w-full p-2 border border-gray-700 rounded bg-dark" />
-              <div className="flex gap-2">
-                <button onClick={() => setIsEditing(false)} className="px-4 py-1.5 rounded-full border border-gray-500 bg-transparent text-white font-bold">Cancel</button>
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="space-y-4"
+            >
+              <div className="space-y-1">
+                <label className="text-xs text-gray-500 font-bold uppercase ml-1">
+                  Name
+                </label>
+                <input
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  placeholder="Full name"
+                  className="w-full p-3 border border-gray-300 dark:border-gray-700 rounded-xl bg-transparent text-gray-900 dark:text-white focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-all placeholder-gray-400"
+                />
               </div>
-            </div>
+
+              <div className="space-y-1">
+                <label className="text-xs text-gray-500 font-bold uppercase ml-1">
+                  Username
+                </label>
+                <input
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder="Username"
+                  className="w-full p-3 border border-gray-300 dark:border-gray-700 rounded-xl bg-transparent text-gray-900 dark:text-white focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-all placeholder-gray-400"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs text-gray-500 font-bold uppercase ml-1">
+                  Bio
+                </label>
+                <textarea
+                  value={bio}
+                  onChange={(e) => setBio(e.target.value)}
+                  placeholder="Bio"
+                  className="w-full p-3 border border-gray-300 dark:border-gray-700 rounded-xl bg-transparent text-gray-900 dark:text-white focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-all resize-none placeholder-gray-400"
+                  rows={3}
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs text-gray-500 font-bold uppercase ml-1">
+                  Website
+                </label>
+                <input
+                  value={website}
+                  onChange={(e) => setWebsite(e.target.value)}
+                  placeholder="Website URL"
+                  className="w-full p-3 border border-gray-300 dark:border-gray-700 rounded-xl bg-transparent text-gray-900 dark:text-white focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-all placeholder-gray-400"
+                />
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  onClick={() => setIsEditing(false)}
+                  className="px-6 py-2 rounded-full border border-gray-300 dark:border-gray-500 bg-transparent text-gray-900 dark:text-white font-bold hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </motion.div>
           ) : (
             <>
-              <h1 className="text-2xl font-bold text-white leading-tight">{profile?.full_name}</h1>
+              <h1 className="text-2xl font-bold text-gray-900 dark:text-white leading-tight">
+                {profile?.full_name}
+              </h1>
               <p className="text-gray-500">@{profile?.username}</p>
-              
-              <p className="mt-3 text-[15px] text-gray-200">{profile?.bio}</p>
+
+              <p className="mt-3 text-[15px] text-gray-700 dark:text-gray-200 dark:opacity-80">{profile?.bio}</p>
 
               <div className="flex flex-wrap gap-4 mt-3 text-gray-500 text-sm">
                 {profile?.website && (
                   <div className="flex items-center gap-1">
                     <LinkIcon size={16} />
-                    <a href={profile.website} target="_blank" rel="noopener noreferrer" className="text-brand hover:underline">{profile.website.replace(/^https?:\/\//, '')}</a>
+                    <a
+                      href={profile.website}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-brand hover:underline"
+                    >
+                      {profile.website.replace(/^https?:\/\//, "")}
+                    </a>
                   </div>
                 )}
                 <div className="flex items-center gap-1">
                   <Calendar size={16} />
-                  <span>Joined {profile?.created_at ? new Date(profile.created_at).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : 'Recently'}</span>
+                  <span>
+                    Joined{" "}
+                    {profile?.created_at
+                      ? new Date(profile.created_at).toLocaleDateString(
+                          "en-US",
+                          { month: "long", year: "numeric" },
+                        )
+                      : "Recently"}
+                  </span>
                 </div>
               </div>
 
               <div className="flex gap-4 mt-4 text-sm">
-                <p><span className="text-white font-bold">{isOwnProfile ? followingIds.length : followingCount}</span> <span className="text-gray-500">Following</span></p>
-                <p><span className="text-white font-bold">{targetUserId && followerCounts[targetUserId] !== undefined ? followerCounts[targetUserId] : followerCount}</span> <span className="text-gray-500">Followers</span></p>
+                <p>
+                  <span className="text-gray-900 dark:text-white font-bold">
+                    {isOwnProfile ? followingIds.length : followingCount}
+                  </span>{" "}
+                  <span className="text-gray-500">Following</span>
+                </p>
+                <p>
+                  <span className="text-gray-900 dark:text-white font-bold">
+                    {targetUserId && followerCounts[targetUserId] !== undefined
+                      ? followerCounts[targetUserId]
+                      : followerCount}
+                  </span>{" "}
+                  <span className="text-gray-500">Followers</span>
+                </p>
               </div>
             </>
           )}
         </div>
       </div>
 
-      <div className="flex border-b border-gray-800 mt-4 overflow-x-auto">
-        {TABS.map(tab => (
-          <button key={tab} onClick={() => setActiveTab(tab)} className="flex-1 min-w-[80px] py-4 text-sm font-bold relative transition-colors hover:bg-white/5 uppercase">
-            <span className={activeTab === tab ? 'text-white' : 'text-gray-500'}>{tab}</span>
-            {activeTab === tab && <motion.div layoutId="profile-tab-indicator" className="absolute bottom-0 left-0 right-0 h-1 bg-brand rounded-full mx-8" />}
+      <div className="flex border-b border-gray-200 dark:border-gray-800 mt-4 overflow-x-auto">
+        {TABS.map((tab) => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(tab)}
+            className="flex-1 min-w-[80px] py-4 text-sm font-bold relative transition-colors hover:bg-black/5 dark:hover:bg-white/5 uppercase"
+          >
+            <span
+              className={activeTab === tab ? "text-gray-900 dark:text-white" : "text-gray-500"}
+            >
+              {tab}
+            </span>
+            {activeTab === tab && (
+              <motion.div
+                layoutId="profile-tab-indicator"
+                className="absolute bottom-0 left-0 right-0 h-1 bg-brand rounded-full mx-8"
+              />
+            )}
           </button>
         ))}
       </div>
 
       <div className="min-h-[400px]">
-        {activeTab === 'Posts' ? (
+        {activeTab === "Posts" ? (
           <div>
             {posts.map((post, idx) => (
-              <Post 
-                key={post.id} post={post} index={idx} 
-                onLike={() => {}} onComment={() => {}} onRepost={() => {}} onShare={() => {}} 
+              <Post
+                key={post.id}
+                post={post}
+                index={idx}
+                onLike={() => {}}
+                onComment={() => {}}
+                onRepost={() => {}}
+                onShare={() => {}}
               />
             ))}
             {posts.length === 0 && !loading && (
-              <div className="p-10 text-center text-gray-500">No posts shared yet.</div>
+              <div className="p-10 text-center text-gray-500">
+                No posts shared yet.
+              </div>
             )}
           </div>
         ) : (
-          <div className="p-10 text-center text-gray-500 italic">Coming soon.</div>
+          <div className="p-10 text-center text-gray-500 italic">
+            Coming soon.
+          </div>
         )}
       </div>
 
       {loading && (
-        <div className="fixed inset-0 bg-dark/20 backdrop-blur-sm flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-white/50 dark:bg-dark/20 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-brand"></div>
         </div>
       )}

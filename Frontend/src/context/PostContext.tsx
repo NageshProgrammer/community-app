@@ -25,6 +25,7 @@ interface PostContextType {
   addComment: (postId: string, content: string) => Promise<void>;
   getComments: (postId: string) => Promise<CommentData[]>;
   sharePost: (postId: string) => Promise<void>;
+  deletePost: (postId: string) => Promise<void>; // FIXED: Added deletePost to the interface
   refreshPosts: () => Promise<void>;
   loading: boolean;
   error: string | null;
@@ -59,8 +60,6 @@ export function PostProvider({ children }: { children: ReactNode }) {
         .order('created_at', { ascending: false });
 
       if (fetchError) throw fetchError;
-
-      console.log("RAW SUPABASE DATA:", data);
 
       const likedResponse = user
         ? await supabase.from('post_likes').select('post_id').eq('user_id', user.id)
@@ -284,7 +283,6 @@ export function PostProvider({ children }: { children: ReactNode }) {
       if (error) throw error;
 
       return (data as any[]).map(comment => {
-        // FIXED: Safely handle if Supabase returns the joined profile as an array here too!
         const profile = Array.isArray(comment.author) ? comment.author[0] : comment.author;
         
         return {
@@ -313,8 +311,28 @@ export function PostProvider({ children }: { children: ReactNode }) {
     await toggleRepost(postId);
   };
 
+  // FIXED: Added the deletePost function
+  const deletePost = async (postId: string) => {
+    if (!user) throw new Error('Must be logged in to delete a post');
+
+    try {
+      const { error } = await supabase
+        .from('posts')
+        .delete()
+        .eq('id', postId);
+
+      if (error) throw error;
+
+      // Instantly remove it from the UI state
+      setPosts(prev => prev.filter(p => p.id !== postId));
+    } catch (err) {
+      console.error('Error deleting post:', err);
+      throw err;
+    }
+  };
+
   return (
-    <PostContext.Provider value={{ posts, addPost, toggleLike, toggleRepost, addComment, getComments, sharePost, refreshPosts: fetchPosts, loading, error }}>
+    <PostContext.Provider value={{ posts, addPost, toggleLike, toggleRepost, addComment, getComments, sharePost, deletePost, refreshPosts: fetchPosts, loading, error }}>
       {children}
     </PostContext.Provider>
   );
