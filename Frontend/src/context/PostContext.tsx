@@ -60,6 +60,8 @@ export function PostProvider({ children }: { children: ReactNode }) {
 
       if (fetchError) throw fetchError;
 
+      console.log("RAW SUPABASE DATA:", data);
+
       const likedResponse = user
         ? await supabase.from('post_likes').select('post_id').eq('user_id', user.id)
         : { data: [] };
@@ -72,7 +74,9 @@ export function PostProvider({ children }: { children: ReactNode }) {
 
       if (data && data.length > 0) {
         const mappedPosts: PostData[] = (data as any[]).map((post) => {
-          const profile = post.author;
+          // FIXED: Safely handle if Supabase returns the joined profile as an array
+          const profile = Array.isArray(post.author) ? post.author[0] : post.author;
+          
           return {
             id: post.id,
             author: {
@@ -88,8 +92,8 @@ export function PostProvider({ children }: { children: ReactNode }) {
             reposts: post.reposts?.[0]?.count || 0,
             isLiked: likedIds.includes(post.id),
             isReposted: repostedIds.includes(post.id),
-            image: post.image || null, // Pulls from DB if you add the column later
-            location: post.location || null, // Pulls from DB if you add the column later
+            image: post.image || null, 
+            location: post.location || null, 
           };
         });
         setPosts(mappedPosts);
@@ -108,7 +112,6 @@ export function PostProvider({ children }: { children: ReactNode }) {
     fetchPosts();
   }, [user]);
 
-  // UPDATED: Now accepts image and location parameters
   const addPost = async (content: string, userId: string, image?: string | null, location?: string | null) => {
     if (!userId) return;
 
@@ -119,7 +122,6 @@ export function PostProvider({ children }: { children: ReactNode }) {
           author_id: userId,
           content,
           title: content.substring(0, 50).trim(),
-          // Note: To save image/location to Supabase permanently, you need to add those columns to your table.
         })
         .select();
 
@@ -148,8 +150,8 @@ export function PostProvider({ children }: { children: ReactNode }) {
         reposts: 0,
         isLiked: false,
         isReposted: false,
-        image: image || null, // Optimistically render the image
-        location: location || null, // Optimistically render the location
+        image: image || null, 
+        location: location || null, 
       };
 
       setPosts(prev => [mappedPost, ...prev]);
@@ -281,17 +283,22 @@ export function PostProvider({ children }: { children: ReactNode }) {
 
       if (error) throw error;
 
-      return (data as any[]).map(comment => ({
-        id: comment.id,
-        content: comment.content,
-        created_at: comment.created_at,
-        author: {
-          id: comment.author?.id || comment.user_id,
-          name: comment.author?.full_name || 'Anonymous User',
-          handle: comment.author?.username || 'unknown',
-          avatar: comment.author?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${comment.author?.username || 'user'}`
-        }
-      }));
+      return (data as any[]).map(comment => {
+        // FIXED: Safely handle if Supabase returns the joined profile as an array here too!
+        const profile = Array.isArray(comment.author) ? comment.author[0] : comment.author;
+        
+        return {
+          id: comment.id,
+          content: comment.content,
+          created_at: comment.created_at,
+          author: {
+            id: profile?.id || comment.user_id,
+            name: profile?.full_name || 'Anonymous User',
+            handle: profile?.username || 'unknown',
+            avatar: profile?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${profile?.username || 'user'}`
+          }
+        };
+      });
     } catch (err) {
       console.error('Error fetching comments:', err);
       return [];

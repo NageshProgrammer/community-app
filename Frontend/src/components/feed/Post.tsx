@@ -1,4 +1,3 @@
-// src/components/feed/Post.tsx
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useEffect, useRef } from 'react';
 import { MessageCircle, Repeat, Heart, Share, MoreHorizontal, MapPin } from 'lucide-react';
@@ -20,8 +19,8 @@ export interface PostData {
   reposts: number;
   isLiked?: boolean;
   isReposted?: boolean;
-  image?: string | null;     // NEW
-  location?: string | null;  // NEW
+  image?: string | null;     
+  location?: string | null;  
 }
 
 interface PostProps {
@@ -39,6 +38,7 @@ export function Post({ post, index, onLike, onRepost, onComment, onShare }: Post
   const { getComments } = usePosts();
   const [comments, setComments] = useState<CommentData[]>([]);
   const [loadingComments, setLoadingComments] = useState(false);
+  
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -65,7 +65,11 @@ export function Post({ post, index, onLike, onRepost, onComment, onShare }: Post
     if (!commentText.trim()) return;
     await onComment(commentText.trim());
     setCommentText('');
-    if (textareaRef.current) textareaRef.current.style.height = 'auto';
+    
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+    }
+    
     const data = await getComments(post.id);
     setComments(data);
   };
@@ -78,6 +82,7 @@ export function Post({ post, index, onLike, onRepost, onComment, onShare }: Post
       className="p-4 border-b border-gray-800 hover:bg-gray-800 transition-colors cursor-pointer"
     >
       <div className="flex gap-4">
+        {/* Avatar */}
         <Link to={`/profile/${post.author.id}`} className="flex-shrink-0">
           <img 
             src={post.author.avatar} 
@@ -87,6 +92,7 @@ export function Post({ post, index, onLike, onRepost, onComment, onShare }: Post
         </Link>
 
         <div className="flex-1">
+          {/* Header */}
           <div className="flex justify-between items-start">
             <div>
               <Link to={`/profile/${post.author.id}`} className="text-white font-bold hover:underline">
@@ -101,6 +107,7 @@ export function Post({ post, index, onLike, onRepost, onComment, onShare }: Post
             </motion.button>
           </div>
 
+          {/* Content */}
           <p className="mt-2 text-[15px] leading-relaxed whitespace-pre-wrap text-gray-100">
             {post.content}
           </p>
@@ -120,16 +127,31 @@ export function Post({ post, index, onLike, onRepost, onComment, onShare }: Post
             </div>
           )}
 
+          {/* Action Buttons */}
           <div className="flex justify-between mt-4 text-gray-500 max-w-md">
-            <ActionIcon icon={MessageCircle} count={post.comments} hoverColor="hover:text-blue-500" hoverBg="group-hover:bg-blue-500/10" activeBg="bg-blue-500/10" isActive={showCommentInput} activeColor="text-blue-500" onClick={() => setShowCommentInput((prev) => !prev)} />
-            <ActionIcon icon={Repeat} count={post.reposts} hoverColor="hover:text-green-500" hoverBg="group-hover:bg-green-500/10" activeBg="bg-green-500/10" isActive={post.isReposted ?? false} activeColor="text-green-500" onClick={onRepost} />
-            <ActionIcon icon={Heart} count={post.likes} hoverColor="hover:text-pink-500" hoverBg="group-hover:bg-pink-500/10" activeBg="bg-pink-500/10" isActive={post.isLiked ?? false} activeColor="text-pink-500" fillIcon={post.isLiked ?? false} onClick={onLike} />
-            <ActionIcon icon={Share} hoverColor="hover:text-brand" hoverBg="group-hover:bg-brand/10" activeBg="bg-brand/10" isActive={false} activeColor="text-brand" onClick={onShare} />
+            <ActionIcon 
+              icon={MessageCircle} count={post.comments} hoverColor="hover:text-blue-500" hoverBg="group-hover:bg-blue-500/10" activeBg="bg-blue-500/10" isActive={showCommentInput} activeColor="text-blue-500" onClick={() => setShowCommentInput((prev) => !prev)} 
+            />
+            <ActionIcon 
+              icon={Repeat} count={post.reposts} hoverColor="hover:text-green-500" hoverBg="group-hover:bg-green-500/10" activeBg="bg-green-500/10" isActive={post.isReposted ?? false} activeColor="text-green-500" onClick={onRepost} 
+            />
+            <ActionIcon 
+              icon={Heart} count={post.likes} hoverColor="hover:text-pink-500" hoverBg="group-hover:bg-pink-500/10" activeBg="bg-pink-500/10" isActive={post.isLiked ?? false} activeColor="text-pink-500" fillIcon={post.isLiked ?? false} onClick={onLike} 
+            />
+            <ActionIcon 
+              icon={Share} hoverColor="hover:text-brand" hoverBg="group-hover:bg-brand/10" activeBg="bg-brand/10" isActive={false} activeColor="text-brand" onClick={onShare} 
+            />
           </div>
 
           <AnimatePresence>
             {showCommentInput && (
-              <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                className="overflow-hidden"
+              >
+                {/* Comments List */}
                 <div className="mt-4 space-y-4 border-l-2 border-gray-800 ml-2 pl-4">
                   {loadingComments ? (
                     <p className="text-gray-500 text-sm">Loading comments...</p>
@@ -153,6 +175,7 @@ export function Post({ post, index, onLike, onRepost, onComment, onShare }: Post
                   )}
                 </div>
 
+                {/* PREMIUM AUTO-EXPANDING COMMENT INPUT */}
                 <div className="mt-4 flex gap-3 items-end bg-transparent">
                   <div className="flex-1 relative bg-gray-800 rounded-2xl border border-gray-800/50 shadow-inner transition-all overflow-hidden">
                     <textarea
