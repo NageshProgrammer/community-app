@@ -1,4 +1,5 @@
 // src/components/feed/Feed.tsx
+import { useState } from 'react'; // NEW: Added useState
 import { AnimatePresence, motion } from 'framer-motion';
 import { CreatePost } from './CreatePost';
 import { Post } from './Post';
@@ -6,25 +7,24 @@ import { usePosts } from '../../context/PostContext';
 import { useAuth } from '../../context/AuthContext';
 import { useSocial } from '../../context/SocialContext';
 import { SearchX, ArrowLeft } from 'lucide-react';
-import { useSearchParams } from 'react-router-dom'; // NEW: To read the URL!
+import { useSearchParams } from 'react-router-dom'; 
 
 export function Feed() {
   const { posts, addPost, toggleLike, toggleRepost, addComment, sharePost, deletePost } = usePosts();
   const { user } = useAuth();
   const { searchQuery, setSearchQuery } = useSocial();
   
-  // NEW: Read the ?shared= ID from the URL
   const [searchParams, setSearchParams] = useSearchParams();
   const sharedPostId = searchParams.get('shared');
 
-  // NEW: Filter logic that handles both "Search" and "Shared Post" modes
+  // NEW: State to track which dropdown is currently open across the whole feed
+  const [activeDropdownId, setActiveDropdownId] = useState<string | null>(null);
+
   let displayPosts = posts;
   
   if (sharedPostId) {
-    // If a shared link is used, ONLY show that specific post
     displayPosts = posts.filter(post => post.id === sharedPostId);
   } else if (searchQuery) {
-    // Otherwise, handle normal searching
     displayPosts = posts.filter(post => 
       post.content.toLowerCase().includes(searchQuery.toLowerCase()) ||
       post.author.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -32,7 +32,6 @@ export function Feed() {
     );
   }
 
-  // NEW: Function to clear the shared post from the URL
   const clearSharedPost = () => {
     const newParams = new URLSearchParams(searchParams);
     newParams.delete('shared');
@@ -42,14 +41,12 @@ export function Feed() {
   return (
     <div className="max-w-3xl mx-auto rounded-2xl border border-gray-800 bg-gray-900 overflow-hidden shadow-xl px-3">
       
-      {/* If we are NOT viewing a shared post and NOT searching, show the Create Post box */}
       {!searchQuery && !sharedPostId && (
         <div className="border-b border-gray-800 p-4">
           <CreatePost onPost={addPost} userId={user?.id || ''} />
         </div>
       )}
 
-      {/* HEADER: Viewing a Shared Post */}
       {sharedPostId && (
         <div className="px-4 py-4 border-b border-gray-800 flex items-center gap-3 bg-brand/5">
           <button 
@@ -65,7 +62,6 @@ export function Feed() {
         </div>
       )}
       
-      {/* HEADER: Search Results */}
       {searchQuery && !sharedPostId && (
         <div className="px-6 py-4 border-b border-gray-800 flex items-center justify-between bg-transparent">
           <p className="text-gray-500">
@@ -120,6 +116,9 @@ export function Feed() {
                 onComment={(comment) => addComment(post.id, comment)}
                 onShare={() => sharePost(post.id)}
                 onDelete={() => deletePost(post.id)}
+                // NEW: Pass the dropdown state to each post
+                activeDropdownId={activeDropdownId}
+                setActiveDropdownId={setActiveDropdownId}
               />
             ))}
           </AnimatePresence>

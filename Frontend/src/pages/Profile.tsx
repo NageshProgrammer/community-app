@@ -42,6 +42,9 @@ export function Profile() {
   const [bio, setBio] = useState("");
   const [website, setWebsite] = useState("");
   const [avatarUrl, setAvatarUrl] = useState("");
+  
+  // NEW: State to hold the actual file before uploading
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -182,14 +185,14 @@ export function Profile() {
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      setAvatarUrl(URL.createObjectURL(file));
+      setAvatarUrl(URL.createObjectURL(file)); // Set preview
+      setAvatarFile(file); // NEW: Save file to be uploaded later
     }
   };
 
   const handleRemoveAvatar = () => {
-    setAvatarUrl(
-      `https://api.dicebear.com/7.x/avataaars/svg?seed=${currentUser?.id}`,
-    );
+    setAvatarUrl(`https://api.dicebear.com/7.x/avataaars/svg?seed=${currentUser?.id}`);
+    setAvatarFile(null); // NEW: Clear pending upload
   };
 
   const handleUpdateProfile = async () => {
@@ -197,6 +200,32 @@ export function Profile() {
     setLoading(true);
 
     try {
+      let finalAvatarUrl = avatarUrl;
+
+      // NEW: Upload image to Supabase Storage if a new file was selected
+      if (avatarFile) {
+        const fileExt = avatarFile.name.split('.').pop();
+        const fileName = `${currentUser.id}-${Date.now()}.${fileExt}`;
+
+        // Upload to 'avatars' bucket
+        const { error: uploadError } = await supabase.storage
+          .from('avatars') 
+          .upload(fileName, avatarFile);
+
+        if (uploadError) {
+          console.error("Storage upload error:", uploadError);
+          throw uploadError;
+        }
+
+        // Get the permanent public URL
+        const { data: { publicUrl } } = supabase.storage
+          .from('avatars')
+          .getPublicUrl(fileName);
+
+        finalAvatarUrl = publicUrl;
+      }
+
+      // Save profile data with the permanent image URL
       const { data, error } = await supabase
         .from("profiles")
         .upsert({
@@ -205,7 +234,7 @@ export function Profile() {
           full_name: fullName || profile.full_name,
           bio: bio || profile.bio,
           website: website || profile.website,
-          avatar_url: avatarUrl || profile.avatar_url,
+          avatar_url: finalAvatarUrl, // Use the uploaded URL, not the local blob
         })
         .select()
         .single();
@@ -214,10 +243,12 @@ export function Profile() {
 
       if (data) {
         setProfile(data as UserProfile);
+        setAvatarFile(null); // Clear the pending file state
         setIsEditing(false);
       }
     } catch (err) {
       console.error("Error updating profile:", err);
+      alert("Failed to update profile. Check console for details.");
     } finally {
       setLoading(false);
     }
@@ -274,7 +305,6 @@ export function Profile() {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                // Adapts overlay dimness based on theme
                 className="absolute inset-0 bg-white/20 dark:bg-black/30 hover:bg-white/40 dark:hover:bg-black/50 transition-colors flex items-center justify-center gap-2"
               >
                 <input
@@ -285,7 +315,6 @@ export function Profile() {
                   className="hidden"
                 />
 
-                {/* FIXED: Buttons now use pure white frosted glass with dark icons in Light mode, and black glass with white icons in Dark mode! */}
                 <button
                   onClick={() => fileInputRef.current?.click()}
                   className="p-2 bg-white/90 dark:bg-black/60 backdrop-blur-md border border-gray-200 dark:border-white/20 text-gray-800 dark:text-white hover:text-white hover:border-brand dark:hover:bg-green-500 rounded-full transition-colors shadow-lg"

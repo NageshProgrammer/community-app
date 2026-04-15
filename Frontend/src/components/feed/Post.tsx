@@ -33,12 +33,13 @@ interface PostProps {
   onComment: (comment: string) => void;
   onShare: () => void;
   onDelete?: () => void; 
+  activeDropdownId: string | null;
+  setActiveDropdownId: (id: string | null) => void;
 }
 
-export function Post({ post, index, onLike, onRepost, onComment, onShare, onDelete }: PostProps) {
+export function Post({ post, index, onLike, onRepost, onComment, onShare, onDelete, activeDropdownId, setActiveDropdownId }: PostProps) {
   const [commentText, setCommentText] = useState('');
   const [showCommentInput, setShowCommentInput] = useState(false);
-  const [showOptions, setShowOptions] = useState(false); // FIXED: Added Dropdown State
   
   const { getComments } = usePosts();
   const { user } = useAuth(); 
@@ -50,6 +51,9 @@ export function Post({ post, index, onLike, onRepost, onComment, onShare, onDele
 
   // Check if the current user is the author of this post
   const isOwnPost = user?.id === post.author.id;
+  
+  // Determine if this specific post's dropdown is the active one
+  const showOptions = activeDropdownId === post.id;
 
   useEffect(() => {
     if (showCommentInput) {
@@ -88,8 +92,18 @@ export function Post({ post, index, onLike, onRepost, onComment, onShare, onDele
   const handleCopyLink = () => {
     const url = `${window.location.origin}/community?shared=${post.id}`;
     navigator.clipboard.writeText(url);
-    setShowOptions(false);
+    setActiveDropdownId(null);
     alert("Link copied to clipboard!"); 
+  };
+
+  // Handle Dropdown Toggle
+  const handleToggleOptions = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (showOptions) {
+      setActiveDropdownId(null); // Close if already open
+    } else {
+      setActiveDropdownId(post.id); // Open this one (and close others)
+    }
   };
 
   return (
@@ -98,7 +112,7 @@ export function Post({ post, index, onLike, onRepost, onComment, onShare, onDele
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.95 }}
       transition={{ duration: 0.4, delay: index * 0.1 }}
-      className="p-4 border-b border-gray-800 hover:bg-gray-800 transition-colors cursor-pointer relative z-10"
+      className="p-4 border-b border-gray-800 hover:bg-gray-800 transition-colors relative z-10"
     >
       <div className="flex gap-4">
         {/* Avatar */}
@@ -125,10 +139,10 @@ export function Post({ post, index, onLike, onRepost, onComment, onShare, onDele
             {/* OPTIONS MENU WRAPPER */}
             <div className="relative z-50">
               <motion.button 
-                onClick={(e) => { e.stopPropagation(); setShowOptions(!showOptions); }}
+                onClick={handleToggleOptions}
                 whileHover={{ scale: 1.1 }} 
                 whileTap={{ scale: 0.9 }} 
-                className={`p-2 rounded-full transition-colors ${showOptions ? 'bg-brand/20 text-brand' : 'text-gray-400 hover:bg-gray-700 hover:text-brand'}`}
+                className={`p-2 rounded-full transition-colors cursor-pointer ${showOptions ? 'bg-brand/20 text-brand' : 'text-gray-400 hover:bg-gray-700 hover:text-brand'}`}
               >
                 <MoreHorizontal size={20} />
               </motion.button>
@@ -138,28 +152,28 @@ export function Post({ post, index, onLike, onRepost, onComment, onShare, onDele
                 {showOptions && (
                   <>
                     {/* Invisible overlay to close dropdown when clicking outside */}
-                    <div className="fixed inset-0 z-40" onClick={(e) => { e.stopPropagation(); setShowOptions(false); }} />
+                    <div className="fixed inset-0 z-40" onClick={(e) => { e.stopPropagation(); setActiveDropdownId(null); }} />
                     
                     <motion.div
                       initial={{ opacity: 0, y: -10, scale: 0.95 }}
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       exit={{ opacity: 0, y: -10, scale: 0.95 }}
                       transition={{ duration: 0.15 }}
-                      className="absolute right-0 top-10 w-48 bg-gray-900/95 backdrop-blur-xl border border-gray-700/50 rounded-2xl shadow-2xl overflow-hidden z-50 py-1"
+                      className="absolute right-0 top-10 w-48 bg-white dark:bg-gray-900/95 backdrop-blur-xl border border-gray-200 dark:border-gray-700/50 rounded-2xl shadow-2xl overflow-hidden z-50 py-1"
                     >
                       <button 
                         onClick={(e) => { e.stopPropagation(); handleCopyLink(); }}
-                        className="w-full text-left px-4 py-3 hover:bg-gray-800 text-white text-sm font-medium transition-colors flex items-center gap-3"
+                        className="w-full text-left px-4 py-3 text-gray-900 hover:text-gray-900 dark:text-white dark:hover:text-white text-sm font-medium transition-colors flex items-center gap-3 group cursor-pointer"
                       >
-                        <LinkIcon size={16} className="text-gray-400" /> Copy Link
+                        <LinkIcon size={16} className="text-gray-500 group-hover:text-gray-900 dark:text-gray-400 dark:group-hover:text-gray-300 transition-colors " /> Copy Link
                       </button>
                       
                       {isOwnPost && (
                         <button 
-                          onClick={(e) => { e.stopPropagation(); setShowOptions(false); onDelete && onDelete(); }}
-                          className="w-full text-left px-4 py-3 hover:bg-red-500/10 text-red-500 text-sm font-medium transition-colors flex items-center gap-3"
+                          onClick={(e) => { e.stopPropagation(); setActiveDropdownId(null); onDelete && onDelete(); }}
+                          className="w-full text-left px-4 py-3 hover:bg-red-50 cursor-pointer dark:hover:bg-red-500/10 text-red-600 hover:text-red-700 dark:text-red-500 dark:hover:text-red-400 text-sm font-medium transition-colors flex items-center gap-3 group"
                         >
-                          <Trash2 size={16} /> Delete Post
+                          <Trash2 size={16} className="transition-colors " /> Delete Post
                         </button>
                       )}
                     </motion.div>
@@ -265,7 +279,7 @@ function ActionIcon({ icon: Icon, count, hoverColor, hoverBg, activeBg, isActive
   return (
     <motion.button
       onClick={(e) => { e.stopPropagation(); if (onClick) onClick(); }}
-      className={`flex items-center gap-1.5 group transition-colors duration-300 ${hoverColor} ${isActive ? activeColor : ''}`}
+      className={`cursor-pointer flex items-center gap-1.5 group transition-colors duration-300 ${hoverColor} ${isActive ? activeColor : ''}`}
       whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
     >
       <div className={`p-2 rounded-full transition-all duration-300 ${hoverBg} ${isActive ? activeBg : 'bg-transparent'}`}>
