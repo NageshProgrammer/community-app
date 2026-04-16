@@ -253,18 +253,20 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
                   ? 'bg-brand/95 text-brand-contrast rounded-tr-sm' 
                   : 'bg-gray-800 text-white rounded-tl-sm border border-gray-800/50'
               }`}>
-                {/* QUOTED REPLY RENDER */}
-                {msg.reply_to && (
+                {/* QUOTED REPLY RENDER - Only if text exists */}
+                {msg.reply_to?.text && (
                   <div className="mb-2 p-2 bg-black/20 rounded-lg border-l-4 border-brand/50 text-[11px] opacity-80 line-clamp-1">
                     {msg.reply_to.text}
                   </div>
                 )}
 
-                {msg.image_url && (
+                {/* IMAGE RENDER - Only if real URL exists */}
+                {msg.image_url && msg.image_url.startsWith('http') && (
                   <img src={msg.image_url} alt="Attached" className="rounded-lg mb-2 max-w-full h-auto cursor-pointer hover:opacity-90" onClick={() => window.open(msg.image_url, '_blank')} />
                 )}
                 
-                {msg.voice_url && (
+                {/* VOICE RENDER - Only if real URL exists */}
+                {msg.voice_url && msg.voice_url.startsWith('http') && (
                   <div className="mb-2">
                     <audio src={msg.voice_url} controls className="h-8 max-w-[200px] bg-transparent invert rounded-full" />
                   </div>
