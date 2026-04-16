@@ -119,9 +119,7 @@ export function PostProvider({ children }: { children: ReactNode }) {
     try {
       // 1. Handle Image Upload if exists
       if (image && image.startsWith('blob:')) {
-        const response = await fetch(image);
-        const blob = await response.json(); // This won't work directly, need to use .blob()
-        // Correction: fetch the blob and upload
+        // Fetch the blob and upload
         const imageBlob = await fetch(image).then(r => r.blob());
         const fileName = `${userId}/${Date.now()}.jpg`;
 
