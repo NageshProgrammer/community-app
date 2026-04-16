@@ -24,7 +24,8 @@ interface ConversationProps {
   onBack: () => void;
 }
 
-const socket = io('http://localhost:10000');
+const BACKEND_URL = import.meta.env.VITE_API_URL || 'http://localhost:10000';
+const socket = io(BACKEND_URL);
 
 export default function Conversation({ chat, onBack }: ConversationProps) {
   const { user } = useAuth();
@@ -39,7 +40,7 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
 
     const fetchMessages = async () => {
       try {
-        const response = await fetch(`http://localhost:10000/api/messages/${chat.id}`);
+        const response = await fetch(`${BACKEND_URL}/api/messages/${chat.id}`);
         const data = await response.json();
         setMessages(data);
       } catch (err) {
@@ -80,7 +81,7 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
     setNewMessage(''); // Clear input
 
     try {
-      const response = await fetch('http://localhost:10000/api/messages', {
+      const response = await fetch(`${BACKEND_URL}/api/messages`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',

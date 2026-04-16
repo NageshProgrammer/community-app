@@ -39,8 +39,9 @@ export function Sidebar({ onOpenPostModal }: SidebarProps) {
 
     const fetchBadgeCounts = async () => {
       try {
+        const BACKEND_URL = import.meta.env.VITE_API_URL || 'http://localhost:10000';
         // 1. Fetch Conversations to calculate total unread messages
-        const convResponse = await fetch('http://localhost:10000/api/conversations', {
+        const convResponse = await fetch(`${BACKEND_URL}/api/conversations`, {
           headers: { 'x-user-id': user.id }
         });
         
@@ -53,7 +54,7 @@ export function Sidebar({ onOpenPostModal }: SidebarProps) {
 
         // 2. Fetch Notifications to calculate unread notifications
         // Assuming you have this endpoint configured similarly on your backend
-        const notifResponse = await fetch('http://localhost:10000/api/notifications', {
+        const notifResponse = await fetch(`${BACKEND_URL}/api/notifications`, {
           headers: { 'x-user-id': user.id }
         });
         

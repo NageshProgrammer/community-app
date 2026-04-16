@@ -45,7 +45,8 @@ export default function Messages() {
     const fetchConversations = async () => {
       setLoading(true);
       try {
-        const response = await fetch('http://localhost:10000/api/conversations', {
+        const BACKEND_URL = import.meta.env.VITE_API_URL || 'http://localhost:10000';
+        const response = await fetch(`${BACKEND_URL}/api/conversations`, {
           headers: { 'x-user-id': user.id }
         });
         if (!response.ok) throw new Error('Failed to fetch');
@@ -89,7 +90,8 @@ export default function Messages() {
     if (user && targetUserId) {
       const openChatWithUser = async () => {
         try {
-          const response = await fetch('http://localhost:10000/api/conversations', {
+          const BACKEND_URL = import.meta.env.VITE_API_URL || 'http://localhost:10000';
+        const response = await fetch(`${BACKEND_URL}/api/conversations`, {
             method: 'POST',
             headers: { 
               'Content-Type': 'application/json',
