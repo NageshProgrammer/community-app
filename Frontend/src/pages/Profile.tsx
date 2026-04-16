@@ -31,6 +31,7 @@ export function Profile() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("Posts");
+  const [activeDropdownId, setActiveDropdownId] = useState<string | null>(null);
   const [posts, setPosts] = useState<PostData[]>([]);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -42,8 +43,8 @@ export function Profile() {
   const [bio, setBio] = useState("");
   const [website, setWebsite] = useState("");
   const [avatarUrl, setAvatarUrl] = useState("");
-  
-  // NEW: State to hold the actual file before uploading
+
+  // State to hold the actual file before uploading
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -185,14 +186,16 @@ export function Profile() {
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      setAvatarUrl(URL.createObjectURL(file)); // Set preview
-      setAvatarFile(file); // NEW: Save file to be uploaded later
+      setAvatarUrl(URL.createObjectURL(file));
+      setAvatarFile(file);
     }
   };
 
   const handleRemoveAvatar = () => {
-    setAvatarUrl(`https://api.dicebear.com/7.x/avataaars/svg?seed=${currentUser?.id}`);
-    setAvatarFile(null); // NEW: Clear pending upload
+    setAvatarUrl(
+      `https://api.dicebear.com/7.x/avataaars/svg?seed=${currentUser?.id}`,
+    );
+    setAvatarFile(null);
   };
 
   const handleUpdateProfile = async () => {
@@ -202,14 +205,14 @@ export function Profile() {
     try {
       let finalAvatarUrl = avatarUrl;
 
-      // NEW: Upload image to Supabase Storage if a new file was selected
+      // Upload image to Supabase Storage if a new file was selected
       if (avatarFile) {
-        const fileExt = avatarFile.name.split('.').pop();
+        const fileExt = avatarFile.name.split(".").pop();
         const fileName = `${currentUser.id}-${Date.now()}.${fileExt}`;
 
         // Upload to 'avatars' bucket
         const { error: uploadError } = await supabase.storage
-          .from('avatars') 
+          .from("avatars")
           .upload(fileName, avatarFile);
 
         if (uploadError) {
@@ -218,9 +221,9 @@ export function Profile() {
         }
 
         // Get the permanent public URL
-        const { data: { publicUrl } } = supabase.storage
-          .from('avatars')
-          .getPublicUrl(fileName);
+        const {
+          data: { publicUrl },
+        } = supabase.storage.from("avatars").getPublicUrl(fileName);
 
         finalAvatarUrl = publicUrl;
       }
@@ -234,7 +237,7 @@ export function Profile() {
           full_name: fullName || profile.full_name,
           bio: bio || profile.bio,
           website: website || profile.website,
-          avatar_url: finalAvatarUrl, // Use the uploaded URL, not the local blob
+          avatar_url: finalAvatarUrl,
         })
         .select()
         .single();
@@ -243,7 +246,7 @@ export function Profile() {
 
       if (data) {
         setProfile(data as UserProfile);
-        setAvatarFile(null); // Clear the pending file state
+        setAvatarFile(null);
         setIsEditing(false);
       }
     } catch (err) {
@@ -273,13 +276,19 @@ export function Profile() {
       <header className="sticky top-0 bg-white/80 dark:bg-dark/80 backdrop-blur-md border-b border-gray-200 dark:border-gray-800 p-2 z-40 flex items-center gap-6">
         <button
           onClick={() => navigate(-1)}
-          className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors text-gray-800 dark:text-white"
+          // Fixed: Changed text color to text-black for light mode
+          className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors text-black dark:text-white"
         >
           <ArrowLeft size={20} />
         </button>
         <div>
-          <h2 className="text-xl font-bold text-gray-900 dark:text-white">{profile?.full_name}</h2>
-          <p className="text-xs text-gray-500">{posts.length} Posts</p>
+          {/* Fixed: Changed text color to text-black for light mode */}
+          <h2 className="text-xl font-bold text-black dark:text-white">
+            {profile?.full_name}
+          </h2>
+          <p className="text-xs text-gray-600 dark:text-gray-400">
+            {posts.length} Posts
+          </p>
         </div>
       </header>
 
@@ -345,7 +354,7 @@ export function Profile() {
               onClick={() =>
                 isEditing ? handleUpdateProfile() : setIsEditing(true)
               }
-              className="px-4 py-1.5 font-bold rounded-full border border-gray-300 dark:border-gray-500 hover:bg-black/5 dark:hover:bg-white/10 transition-colors text-gray-900 dark:text-white"
+              className="px-4 py-1.5 font-bold rounded-full border border-gray-300 dark:border-gray-500 bg-white dark:bg-transparent  dark:hover:bg-white/10 transition-colors text-black dark:text-white"
               disabled={loading}
             >
               {isEditing
@@ -360,10 +369,13 @@ export function Profile() {
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={() => navigate(`/messages?user_id=${targetUserId}`)}
-                className="p-2 border border-gray-300 dark:border-gray-500 rounded-full hover:bg-black/5 dark:hover:bg-gray-800 transition-colors"
+                className="p-2 border border-gray-300 dark:border-gray-500 rounded-full bg-white dark:bg-transparent hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
                 title="Message"
               >
-                <MessageSquare size={20} className="text-gray-900 dark:text-white" />
+                <MessageSquare
+                  size={20}
+                  className="text-black dark:text-white"
+                />
               </motion.button>
 
               <motion.button
@@ -396,58 +408,58 @@ export function Profile() {
               className="space-y-4"
             >
               <div className="space-y-1">
-                <label className="text-xs text-gray-500 font-bold uppercase ml-1">
+                <label className="text-xs text-gray-600 dark:text-gray-500 font-bold uppercase ml-1">
                   Name
                 </label>
                 <input
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
                   placeholder="Full name"
-                  className="w-full p-3 border border-gray-300 dark:border-gray-700 rounded-xl bg-transparent text-gray-900 dark:text-white focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-all placeholder-gray-400"
+                  className="w-full p-3 border border-gray-300 dark:border-gray-700 rounded-xl bg-white dark:bg-transparent text-black dark:text-gray-500 focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-all placeholder-gray-400"
                 />
               </div>
 
               <div className="space-y-1">
-                <label className="text-xs text-gray-500 font-bold uppercase ml-1">
+                <label className="text-xs text-gray-600 dark:text-gray-500 font-bold uppercase ml-1">
                   Username
                 </label>
                 <input
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   placeholder="Username"
-                  className="w-full p-3 border border-gray-300 dark:border-gray-700 rounded-xl bg-transparent text-gray-900 dark:text-white focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-all placeholder-gray-400"
+                  className="w-full p-3 border border-gray-300 dark:border-gray-700 rounded-xl bg-white dark:bg-transparent text-black dark:text-white focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-all placeholder-gray-400"
                 />
               </div>
 
               <div className="space-y-1">
-                <label className="text-xs text-gray-500 font-bold uppercase ml-1">
+                <label className="text-xs text-gray-600 dark:text-gray-500 font-bold uppercase ml-1">
                   Bio
                 </label>
                 <textarea
                   value={bio}
                   onChange={(e) => setBio(e.target.value)}
                   placeholder="Bio"
-                  className="w-full p-3 border border-gray-300 dark:border-gray-700 rounded-xl bg-transparent text-gray-900 dark:text-white focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-all resize-none placeholder-gray-400"
+                  className="w-full p-3 border border-gray-300 dark:border-gray-700 rounded-xl bg-white dark:bg-transparent text-black dark:text-white focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-all resize-none placeholder-gray-400"
                   rows={3}
                 />
               </div>
 
               <div className="space-y-1">
-                <label className="text-xs text-gray-500 font-bold uppercase ml-1">
+                <label className="text-xs text-gray-600 dark:text-gray-500 font-bold uppercase ml-1">
                   Website
                 </label>
                 <input
                   value={website}
                   onChange={(e) => setWebsite(e.target.value)}
                   placeholder="Website URL"
-                  className="w-full p-3 border border-gray-300 dark:border-gray-700 rounded-xl bg-transparent text-gray-900 dark:text-white focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-all placeholder-gray-400"
+                  className="w-full p-3 border border-gray-300 dark:border-gray-700 rounded-xl bg-white dark:bg-transparent text-black dark:text-white focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-all placeholder-gray-400"
                 />
               </div>
 
               <div className="flex gap-2 pt-2">
                 <button
                   onClick={() => setIsEditing(false)}
-                  className="px-6 py-2 rounded-full border border-gray-300 dark:border-gray-500 bg-transparent text-gray-900 dark:text-white font-bold hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+                  className="px-6 py-2 rounded-full border border-gray-300 dark:border-gray-500 bg-white dark:bg-transparent text-black dark:text-white font-bold hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
                 >
                   Cancel
                 </button>
@@ -455,14 +467,20 @@ export function Profile() {
             </motion.div>
           ) : (
             <>
-              <h1 className="text-2xl font-bold text-gray-900 dark:text-white leading-tight">
+              {/* Fixed: Changed text color to text-black for light mode */}
+              <h1 className="text-2xl font-bold  text-black dark:text-white leading-tight">
                 {profile?.full_name}
               </h1>
-              <p className="text-gray-500">@{profile?.username}</p>
+              {/* Fixed: Made the username a darker gray in light mode */}
+              <p className="text-gray-600 dark:text-gray-400">
+                @{profile?.username}
+              </p>
 
-              <p className="mt-3 text-[15px] text-gray-700 dark:text-gray-200 dark:opacity-80">{profile?.bio}</p>
+              <p className="mt-3 text-[15px] text-gray-800 dark:text-gray-200 dark:opacity-80">
+                {profile?.bio}
+              </p>
 
-              <div className="flex flex-wrap gap-4 mt-3 text-gray-500 text-sm">
+              <div className="flex flex-wrap gap-4 mt-3 text-gray-600 dark:text-gray-400 text-sm">
                 {profile?.website && (
                   <div className="flex items-center gap-1">
                     <LinkIcon size={16} />
@@ -492,18 +510,24 @@ export function Profile() {
 
               <div className="flex gap-4 mt-4 text-sm">
                 <p>
-                  <span className="text-gray-900 dark:text-white font-bold">
+                  {/* Fixed: Changed count number to text-black for light mode */}
+                  <span className="text-black dark:text-white font-bold">
                     {isOwnProfile ? followingIds.length : followingCount}
                   </span>{" "}
-                  <span className="text-gray-500">Following</span>
+                  <span className="text-gray-600 dark:text-gray-400">
+                    Following
+                  </span>
                 </p>
                 <p>
-                  <span className="text-gray-900 dark:text-white font-bold">
+                  {/* Fixed: Changed count number to text-black for light mode */}
+                  <span className="text-black dark:text-white font-bold">
                     {targetUserId && followerCounts[targetUserId] !== undefined
                       ? followerCounts[targetUserId]
                       : followerCount}
                   </span>{" "}
-                  <span className="text-gray-500">Followers</span>
+                  <span className="text-gray-600 dark:text-gray-400">
+                    Followers
+                  </span>
                 </p>
               </div>
             </>
@@ -516,10 +540,15 @@ export function Profile() {
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
-            className="flex-1 min-w-[80px] py-4 text-sm font-bold relative transition-colors hover:bg-black/5 dark:hover:bg-white/5 uppercase"
+            className="flex-1 min-w-[80px] py-4 text-sm relative transition-colors hover:bg-black/5 dark:hover:bg-white/5 uppercase"
           >
+            {/* Fixed: Active tab is pure black, inactive is gray. Dark mode stays white/gray */}
             <span
-              className={activeTab === tab ? "text-gray-900 dark:text-white" : "text-gray-500"}
+              className={
+                activeTab === tab
+                  ? "text-black dark:text-gray-500 font-bold"
+                  : "text-gray-500 dark:text-gray-400 font-medium"
+              }
             >
               {tab}
             </span>
@@ -545,6 +574,8 @@ export function Profile() {
                 onComment={() => {}}
                 onRepost={() => {}}
                 onShare={() => {}}
+                activeDropdownId={activeDropdownId} // <-- ADD THIS
+                setActiveDropdownId={setActiveDropdownId} // <-- ADD THIS
               />
             ))}
             {posts.length === 0 && !loading && (
