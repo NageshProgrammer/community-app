@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { Send, ArrowLeft, MoreVertical, Image, Smile, Mic, Heart } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../../context/AuthContext';
 import { io } from 'socket.io-client';
 import { supabase } from '../../utils/supabase';
