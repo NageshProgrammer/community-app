@@ -11,6 +11,7 @@ type Chat = {
   avatarColor: string;
   initials: string;
   isOnline: boolean;
+  isGroup?: boolean;
 };
 
 interface ConversationProps {
@@ -253,30 +254,32 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
                   ? 'bg-brand/95 text-brand-contrast rounded-tr-sm' 
                   : 'bg-gray-800 text-white rounded-tl-sm border border-gray-800/50'
               }`}>
-                {/* QUOTED REPLY RENDER - WhatsApp Style */}
+                {/* QUOTED REPLY RENDER */}
                 {msg.reply_to && (
-                  <div className={`mb-2 p-2 rounded-lg border-l-4 text-[11px] ${
+                  <div className={`mb-2 p-2 rounded-lg border-l-4 text-[11px] min-w-[120px] ${
                     isMe ? 'bg-black/30 border-brand' : 'bg-black/20 border-gray-500'
                   }`}>
-                    <p className={`font-bold mb-0.5 ${isMe ? 'text-brand' : 'text-gray-400'}`}>
-                      {msg.reply_to.senderid === user?.id ? 'You' : (msg.reply_to.author?.full_name || chat.sender)}
-                    </p>
-                    <div className="flex items-center gap-1 opacity-80">
-                      {msg.reply_to.image_url && <Image size={10} />}
-                      {msg.reply_to.voice_url && <Mic size={10} />}
-                      <span className="line-clamp-1">
-                        {msg.reply_to.text || (msg.reply_to.image_url ? 'Photo' : msg.reply_to.voice_url ? 'Voice message' : '')}
+                    {chat.isGroup && (
+                      <p className={`font-bold mb-0.5 ${isMe ? 'text-brand' : 'text-gray-400'}`}>
+                        {msg.reply_to.senderid === user?.id ? 'You' : (msg.reply_to.author?.full_name || chat.sender)}
+                      </p>
+                    )}
+                    <div className="flex items-center gap-1 text-white/90">
+                      {msg.reply_to.image_url && <Image size={10} className="text-gray-400" />}
+                      {msg.reply_to.voice_url && <Mic size={10} className="text-gray-400" />}
+                      <span className="line-clamp-2 italic">
+                        {msg.reply_to.text || (msg.reply_to.image_url ? 'Photo' : msg.reply_to.voice_url ? 'Voice message' : 'Message')}
                       </span>
                     </div>
                   </div>
                 )}
 
-                {/* IMAGE RENDER - Only if real URL exists */}
+                {/* IMAGE RENDER */}
                 {msg.image_url && msg.image_url.startsWith('http') && (
                   <img src={msg.image_url} alt="Attached" className="rounded-lg mb-2 max-w-full h-auto cursor-pointer hover:opacity-90" onClick={() => window.open(msg.image_url, '_blank')} />
                 )}
                 
-                {/* VOICE RENDER - Only if real URL exists */}
+                {/* VOICE RENDER */}
                 {msg.voice_url && msg.voice_url.startsWith('http') && (
                   <div className="mb-2">
                     <audio src={msg.voice_url} controls className="h-8 max-w-[200px] bg-transparent invert rounded-full" />
@@ -287,7 +290,7 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
                 
                 <div className="flex items-center justify-between gap-4 mt-1">
                   <p className={`text-[10px] font-semibold ${isMe ? 'opacity-60' : 'text-gray-500'}`}>
-                    {new Date(msg.timestamp || msg.created_at || msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    {new Date(msg.timestamp || msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </p>
                   
                   <div className="flex items-center gap-2">
@@ -331,7 +334,7 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
         )}
       </AnimatePresence>
 
-      {/* EMOJI PICKER MODAL */}
+      {/* EMOJI PICKER */}
       <AnimatePresence>
         {showEmojis && (
           <motion.div 
@@ -391,4 +394,4 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
       </div>
     </motion.div>
   );
-}
+}
