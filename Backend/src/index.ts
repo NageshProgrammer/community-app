@@ -139,8 +139,8 @@ app.get('/api/messages/:conversationId', async (req, res) => {
   try {
     const { data: messages, error } = await supabase
       .from('messages')
-      .select('*, reply_to:messages(text, senderid)') // Join to get the quoted message
-      .eq('conversationid', conversationId) // FIXED: lowered case
+      .select('*, reply_to:messages(text, senderid, author:profiles!senderid(full_name))')
+      .eq('conversationid', conversationId)
       .order('timestamp', { ascending: true });
 
     if (error) throw error;

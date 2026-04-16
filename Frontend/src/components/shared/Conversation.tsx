@@ -253,10 +253,15 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
                   ? 'bg-brand/95 text-brand-contrast rounded-tr-sm' 
                   : 'bg-gray-800 text-white rounded-tl-sm border border-gray-800/50'
               }`}>
-                {/* QUOTED REPLY RENDER - Only if text exists */}
+                {/* QUOTED REPLY RENDER - WhatsApp Style */}
                 {msg.reply_to?.text && (
-                  <div className="mb-2 p-2 bg-black/20 rounded-lg border-l-4 border-brand/50 text-[11px] opacity-80 line-clamp-1">
-                    {msg.reply_to.text}
+                  <div className={`mb-2 p-2 rounded-lg border-l-4 text-[11px] ${
+                    isMe ? 'bg-black/30 border-brand' : 'bg-black/20 border-gray-500'
+                  }`}>
+                    <p className={`font-bold mb-0.5 ${isMe ? 'text-brand' : 'text-gray-400'}`}>
+                      {msg.reply_to.senderid === user?.id ? 'You' : (msg.reply_to.author?.full_name || 'User')}
+                    </p>
+                    <p className="opacity-80 line-clamp-1">{msg.reply_to.text}</p>
                   </div>
                 )}
 
