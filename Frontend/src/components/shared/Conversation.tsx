@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Send, ArrowLeft, MoreVertical, Image, Smile, Mic, Heart } from 'lucide-react';
+import { Send, ArrowLeft, MoreVertical, Image, Smile, Mic, Heart, Reply, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../../context/AuthContext';
 import { io } from 'socket.io-client';
@@ -30,6 +30,7 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
   const [uploading, setUploading] = useState(false);
   const [showEmojis, setShowEmojis] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  const [replyingTo, setReplyingTo] = useState<any | null>(null);
   
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -78,8 +79,11 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
     if (!content.trim() && !imageUrl && !voiceUrl) return;
     if (!user || !chat.id) return;
     
+    const replyId = replyingTo?.id;
+
     setNewMessage('');
     setShowEmojis(false);
+    setReplyingTo(null);
 
     try {
       const response = await fetch(`${BACKEND_URL}/api/messages`, {
@@ -92,7 +96,8 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
           conversationId: chat.id,
           text: content,
           imageUrl: imageUrl,
-          voiceUrl: voiceUrl
+          voiceUrl: voiceUrl,
+          replyToId: replyId
         })
       });
 
@@ -248,6 +253,13 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
                   ? 'bg-brand/95 text-brand-contrast rounded-tr-sm' 
                   : 'bg-gray-800 text-white rounded-tl-sm border border-gray-800/50'
               }`}>
+                {/* QUOTED REPLY RENDER */}
+                {msg.reply_to && (
+                  <div className="mb-2 p-2 bg-black/20 rounded-lg border-l-4 border-brand/50 text-[11px] opacity-80 line-clamp-1">
+                    {msg.reply_to.text}
+                  </div>
+                )}
+
                 {msg.image_url && (
                   <img src={msg.image_url} alt="Attached" className="rounded-lg mb-2 max-w-full h-auto cursor-pointer hover:opacity-90" onClick={() => window.open(msg.image_url, '_blank')} />
                 )}
@@ -265,18 +277,46 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
                     {new Date(msg.timestamp || msg.created_at || msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </p>
                   
-                  <button 
-                    onClick={() => toggleMessageLike(msg.id)}
-                    className={`transition-all duration-300 transform active:scale-150 ${msg.isLiked ? 'text-pink-500' : 'text-gray-500 opacity-0 group-hover:opacity-100'}`}
-                  >
-                    <Heart size={12} fill={msg.isLiked ? "currentColor" : "none"} />
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button 
+                      onClick={() => setReplyingTo(msg)}
+                      className="text-gray-500 opacity-0 group-hover:opacity-100 hover:text-brand transition-all"
+                    >
+                      <Reply size={12} />
+                    </button>
+                    <button 
+                      onClick={() => toggleMessageLike(msg.id)}
+                      className={`transition-all duration-300 transform active:scale-150 ${msg.isLiked ? 'text-pink-500' : 'text-gray-500 opacity-0 group-hover:opacity-100'}`}
+                    >
+                      <Heart size={12} fill={msg.isLiked ? "currentColor" : "none"} />
+                    </button>
+                  </div>
                 </div>
               </div>
             </motion.div>
           );
         })}
       </div>
+
+      {/* REPLY PREVIEW */}
+      <AnimatePresence>
+        {replyingTo && (
+          <motion.div 
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="px-4 py-2 border-t border-gray-800 bg-gray-900 flex items-center justify-between gap-4"
+          >
+            <div className="flex-1 border-l-4 border-brand pl-3">
+              <p className="text-xs text-brand font-bold">Replying to {replyingTo.senderId === user?.id ? 'yourself' : chat.sender}</p>
+              <p className="text-xs text-gray-400 line-clamp-1">{replyingTo.text || (replyingTo.image_url ? '📷 Photo' : '🎤 Voice message')}</p>
+            </div>
+            <button onClick={() => setReplyingTo(null)} className="p-1 hover:bg-gray-800 rounded-full transition-colors">
+              <X size={16} className="text-gray-500" />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* EMOJI PICKER MODAL */}
       <AnimatePresence>

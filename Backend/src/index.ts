@@ -139,7 +139,7 @@ app.get('/api/messages/:conversationId', async (req, res) => {
   try {
     const { data: messages, error } = await supabase
       .from('messages')
-      .select('*')
+      .select('*, reply_to:messages(text, senderid)') // Join to get the quoted message
       .eq('conversationid', conversationId) // FIXED: lowered case
       .order('timestamp', { ascending: true });
 
@@ -169,7 +169,7 @@ app.get('/api/messages/:conversationId', async (req, res) => {
 
 app.post('/api/messages', async (req, res) => {
   const currentUserId = getUserId(req);
-  const { conversationId, text, imageUrl, voiceUrl } = req.body;
+  const { conversationId, text, imageUrl, voiceUrl, replyToId } = req.body;
 
   if (!currentUserId || !conversationId) return res.status(400).json({ error: 'Missing fields' });
 
@@ -182,6 +182,7 @@ app.post('/api/messages', async (req, res) => {
         text,
         image_url: imageUrl,
         voice_url: voiceUrl,
+        reply_to_id: replyToId, // Added reply support
         timestamp: new Date().toISOString()
       })
       .select()
