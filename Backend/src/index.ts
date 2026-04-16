@@ -169,9 +169,9 @@ app.get('/api/messages/:conversationId', async (req, res) => {
 
 app.post('/api/messages', async (req, res) => {
   const currentUserId = getUserId(req);
-  const { conversationId, text } = req.body;
+  const { conversationId, text, imageUrl } = req.body;
 
-  if (!currentUserId || !conversationId || !text) return res.status(400).json({ error: 'Missing fields' });
+  if (!currentUserId || !conversationId) return res.status(400).json({ error: 'Missing fields' });
 
   try {
     const { data: newMessage, error: msgError } = await supabase
@@ -180,6 +180,7 @@ app.post('/api/messages', async (req, res) => {
         conversationid: conversationId, // FIXED: lowered case
         senderid: currentUserId, // FIXED: lowered case
         text,
+        image_url: imageUrl,
         timestamp: new Date().toISOString()
       })
       .select()

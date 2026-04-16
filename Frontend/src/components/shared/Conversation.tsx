@@ -29,10 +29,11 @@ const socket = io(BACKEND_URL);
 
 export default function Conversation({ chat, onBack }: ConversationProps) {
   const { user } = useAuth();
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<any[]>([]);
   const [newMessage, setNewMessage] = useState('');
+  const [uploading, setUploading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
-  // FIXED: Removed the unused isTyping state variable
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // 1. Fetch History
   useEffect(() => {
@@ -40,7 +41,9 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
 
     const fetchMessages = async () => {
       try {
-        const response = await fetch(`${BACKEND_URL}/api/messages/${chat.id}`);
+        const response = await fetch(`${BACKEND_URL}/api/messages/${chat.id}`, {
+          headers: { 'x-user-id': user?.id || '' }
+        });
         const data = await response.json();
         setMessages(data);
       } catch (err) {
@@ -49,21 +52,16 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
     };
 
     fetchMessages();
-
-    // Join Socket Room
     socket.emit('join_room', chat.id);
 
-    const handleNewMessage = (msg: Message) => {
+    const handleNewMessage = (msg: any) => {
       if (msg.senderId !== user?.id) {
         setMessages(prev => [...prev, msg]);
       }
     };
 
     socket.on('new_message', handleNewMessage);
-    
-    return () => {
-      socket.off('new_message', handleNewMessage);
-    };
+    return () => { socket.off('new_message', handleNewMessage); };
   }, [chat.id, user?.id]);
 
   // 2. Scroll to Bottom
@@ -74,11 +72,12 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
   }, [messages]);
 
   // 3. Send Message
-  const handleSend = async () => {
-    if (!newMessage.trim() || !user || !chat.id) return;
+  const handleSend = async (text?: string, imageUrl?: string) => {
+    const content = text || newMessage;
+    if (!content.trim() && !imageUrl) return;
+    if (!user || !chat.id) return;
     
-    const text = newMessage;
-    setNewMessage(''); // Clear input
+    setNewMessage('');
 
     try {
       const response = await fetch(`${BACKEND_URL}/api/messages`, {
@@ -89,7 +88,8 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
         },
         body: JSON.stringify({
           conversationId: chat.id,
-          text
+          text: content,
+          imageUrl: imageUrl
         })
       });
 
@@ -102,6 +102,52 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
     }
   };
 
+  // 4. Handle Image Upload
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !user) return;
+
+    setUploading(true);
+    try {
+      const fileName = `${user.id}/${Date.now()}-${file.name}`;
+      const { error } = await supabase.storage
+        .from('message-attachments')
+        .upload(fileName, file);
+
+      if (error) throw error;
+
+      const { data: urlData } = supabase.storage
+        .from('message-attachments')
+        .getPublicUrl(fileName);
+
+      await handleSend('', urlData.publicUrl);
+    } catch (err) {
+      console.error('Upload failed:', err);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  // 5. Toggle Message Like
+  const toggleMessageLike = async (messageId: string) => {
+    if (!user) return;
+    const msg = messages.find(m => m.id === messageId);
+    if (!msg) return;
+
+    const isLiked = msg.isLiked;
+    try {
+      if (isLiked) {
+        await supabase.from('message_likes').delete().match({ message_id: messageId, user_id: user.id });
+      } else {
+        await supabase.from('message_likes').insert({ message_id: messageId, user_id: user.id });
+      }
+      
+      setMessages(prev => prev.map(m => m.id === messageId ? { ...m, isLiked: !isLiked } : m));
+    } catch (err) {
+      console.error('Like failed:', err);
+    }
+  };
+
   return (
     <motion.div 
       initial={{ opacity: 0, x: 20, scale: 0.98 }}
@@ -110,6 +156,8 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
       transition={{ duration: 0.3, ease: "easeOut" }}
       className="flex flex-col h-[calc(100vh-140px)] bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden shadow-2xl relative"
     >
+      <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleImageUpload} />
+      
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b border-gray-800 bg-transparent z-10">
         <div className="flex items-center gap-3">
@@ -126,7 +174,7 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
           </div>
           <div>
             <h3 className="font-bold text-white">{chat.sender}</h3>
-            <p className="text-xs text-gray-500 font-medium">{chat.isOnline ? 'Online' : 'Last seen 2h ago'}</p>
+            <p className="text-xs text-gray-500 font-medium">{chat.isOnline ? 'Online' : 'Offline'}</p>
           </div>
         </div>
         <button className="p-2 hover:bg-gray-800 rounded-full transition-colors">
@@ -146,17 +194,30 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               key={msg.id}
-              className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}
+              className={`flex items-end gap-2 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}
             >
-              <div className={`max-w-[80%] px-4 py-2.5 rounded-2xl shadow-sm ${
+              <div className={`group relative max-w-[80%] px-4 py-2.5 rounded-2xl shadow-sm ${
                 isMe 
                   ? 'bg-brand/95 text-brand-contrast rounded-tr-sm' 
                   : 'bg-gray-800 text-white rounded-tl-sm border border-gray-800/50'
               }`}>
-                <p className="text-sm font-medium leading-relaxed">{msg.text}</p>
-                <p className={`text-[10px] mt-1 font-semibold ${isMe ? 'opacity-60' : 'text-gray-500'}`}>
-                  {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </p>
+                {msg.image_url && (
+                  <img src={msg.image_url} alt="Attached" className="rounded-lg mb-2 max-w-full h-auto cursor-pointer hover:opacity-90" onClick={() => window.open(msg.image_url, '_blank')} />
+                )}
+                {msg.text && <p className="text-sm font-medium leading-relaxed">{msg.text}</p>}
+                
+                <div className="flex items-center justify-between gap-4 mt-1">
+                  <p className={`text-[10px] font-semibold ${isMe ? 'opacity-60' : 'text-gray-500'}`}>
+                    {new Date(msg.timestamp || msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </p>
+                  
+                  <button 
+                    onClick={() => toggleMessageLike(msg.id)}
+                    className={`transition-all duration-300 transform active:scale-150 ${msg.isLiked ? 'text-pink-500' : 'text-gray-500 opacity-0 group-hover:opacity-100'}`}
+                  >
+                    <Heart size={12} fill={msg.isLiked ? "currentColor" : "none"} />
+                  </button>
+                </div>
               </div>
             </motion.div>
           );
@@ -165,8 +226,13 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
 
       {/* Input Area */}
       <div className="p-4 border-t border-gray-800 bg-transparent z-10">
-        <div className="flex items-center gap-2 bg-gray-800 border border-gray-800 rounded-2xl px-4 py-2 shadow-inner focus-within:ring-1 focus-within:ring-brand/50 transition-all">
-          <button className="text-gray-500 hover:text-brand transition-colors">
+        <div className="flex items-center gap-2 bg-gray-800 border border-gray-800 rounded-2xl px-4 py-2 shadow-inner">
+          <button 
+            type="button"
+            disabled={uploading}
+            onClick={() => fileInputRef.current?.click()}
+            className={`text-gray-500 hover:text-brand transition-colors ${uploading ? 'animate-pulse' : ''}`}
+          >
             <Image className="w-5 h-5" />
           </button>
           <button className="text-gray-500 hover:text-brand transition-colors">
@@ -174,15 +240,16 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
           </button>
           <input 
             type="text" 
-            placeholder="iMessage..."
+            placeholder={uploading ? "Uploading image..." : "Type a message..."}
             value={newMessage}
+            disabled={uploading}
             onChange={(e) => setNewMessage(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleSend()}
             className="flex-1 bg-transparent border-none outline-none text-white text-sm py-2 placeholder-gray-500"
           />
           {newMessage ? (
             <button 
-              onClick={handleSend}
+              onClick={() => handleSend()}
               className="p-2 bg-brand rounded-full text-brand-contrast hover:opacity-90 transition-opacity shadow-md"
             >
               <Send className="w-4 h-4 ml-0.5" />
@@ -196,4 +263,4 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
       </div>
     </motion.div>
   );
-}
+}
