@@ -294,6 +294,7 @@ export function PostProvider({ children }: { children: ReactNode }) {
           id,
           content,
           created_at,
+          user_id,
           author:profiles (
             id,
             username,
