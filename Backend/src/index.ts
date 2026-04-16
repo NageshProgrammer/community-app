@@ -5,7 +5,7 @@ import path from 'path';
 import fs from 'fs';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
-import { v4 as uuidv4 } from 'uuid';
+import { supabase } from './supabase';
 
 dotenv.config();
 
@@ -14,151 +14,212 @@ const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: {
     origin: '*',
+    methods: ['GET', 'POST', 'PATCH', 'DELETE']
   }
 });
 
 const PORT = process.env.PORT || 10000;
-const USERS_FILE = path.join(__dirname, 'users.json');
-const CONVERSATIONS_FILE = path.join(__dirname, 'conversations.json');
-const MESSAGES_FILE = path.join(__dirname, 'messages.json');
 
 app.use(cors());
 app.use(express.json());
 
-// ===== DATABASE HELPERS =====
-const loadFile = <T>(filePath: string, defaultVal: T): T => {
-  try {
-    if (fs.existsSync(filePath)) {
-      return JSON.parse(fs.readFileSync(filePath, 'utf8'));
-    }
-  } catch (err) {
-    console.error(`Error loading ${filePath}:`, err);
-  }
-  return defaultVal;
-};
-
-const saveFile = (filePath: string, data: any) => {
-  try {
-    fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
-  } catch (err) {
-    console.error(`Error saving ${filePath}:`, err);
-  }
-};
-
-let usersData = loadFile<Record<string, User>>(USERS_FILE, {});
-let conversations = loadFile<Conversation[]>(CONVERSATIONS_FILE, []);
-let messagesStore = loadFile<Message[]>(MESSAGES_FILE, []);
-
-// ===== INTERFACES =====
-interface User {
-  id: string;
-  username: string;
-  followers: string[];
-  following: string[];
-}
-
-interface Conversation {
-  id: string;
-  participants: string[];
-  lastMessage?: string;
-  updatedAt: string;
-}
-
-interface Message {
-  id: string;
-  conversationId: string;
-  senderId: string;
-  text: string;
-  timestamp: string;
-  seen: boolean;
-}
-
-// ===== AUTH MIDDLEWARE (MOCK) =====
+// ===== MIDDLEWARE =====
 const getUserId = (req: express.Request) => req.headers['x-user-id'] as string;
 
-// ===== MESSAGING API =====
+// ===== NOTIFICATIONS API =====
+app.get('/api/notifications', async (req, res) => {
+  const userId = getUserId(req);
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
-// 2. Start Conversation: POST /api/conversations
-app.post('/api/conversations', (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('notifications')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    res.json(data || []);
+  } catch (err) {
+    console.error('Error fetching notifications:', err);
+    res.status(500).json({ error: 'Failed' });
+  }
+});
+
+// ===== CONVERSATIONS API =====
+
+app.get('/api/conversations', async (req, res) => {
+  const userId = getUserId(req);
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+  try {
+    const { data: convos, error } = await supabase
+      .from('conversations')
+      .select('*')
+      .contains('participants', [userId])
+      .order('updatedat', { ascending: false }); // FIXED: lowered case
+
+    if (error) throw error;
+
+    const enrichedConvos = await Promise.all((convos || []).map(async (convo) => {
+      const { count } = await supabase
+        .from('messages')
+        .select('*', { count: 'exact', head: true })
+        .eq('conversationid', convo.id) // FIXED: lowered case
+        .eq('isread', false) // FIXED: lowered case
+        .neq('senderid', userId); // FIXED: lowered case
+
+      return {
+        ...convo,
+        unreadCount: count || 0,
+        // Map back to camelCase for the Frontend if necessary
+        updatedAt: convo.updatedat,
+        lastMessage: convo.lastmessage
+      };
+    }));
+
+    res.json(enrichedConvos);
+  } catch (err) {
+    console.error('Error fetching conversations:', err);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+app.post('/api/conversations', async (req, res) => {
   const currentUserId = getUserId(req);
   const { targetUserId } = req.body;
 
-  if (!currentUserId || !targetUserId) return res.status(400).json({ error: 'Missing user IDs' });
+  if (!currentUserId || !targetUserId) return res.status(400).json({ error: 'Missing IDs' });
 
-  // Check if exists
-  let conversation = conversations.find(c => 
-    c.participants.includes(currentUserId) && c.participants.includes(targetUserId)
-  );
+  try {
+    const { data: existing } = await supabase
+      .from('conversations')
+      .select('*')
+      .contains('participants', [currentUserId])
+      .contains('participants', [targetUserId])
+      .maybeSingle();
 
-  if (!conversation) {
-    conversation = {
-      id: uuidv4(),
-      participants: [currentUserId, targetUserId],
-      updatedAt: new Date().toISOString()
-    };
-    conversations.push(conversation);
-    saveFile(CONVERSATIONS_FILE, conversations);
+    if (existing) {
+      return res.json({
+        ...existing, 
+        unreadCount: 0,
+        updatedAt: existing.updatedat,
+        lastMessage: existing.lastmessage
+      });
+    }
+
+    const { data: newConvo, error } = await supabase
+      .from('conversations')
+      .insert({
+        participants: [currentUserId, targetUserId],
+        updatedat: new Date().toISOString() // FIXED: lowered case
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+    res.json({
+      ...newConvo, 
+      unreadCount: 0,
+      updatedAt: newConvo.updatedat,
+      lastMessage: newConvo.lastmessage
+    });
+  } catch (err) {
+    console.error('Error starting conversation:', err);
+    res.status(500).json({ error: 'Failed' });
   }
-
-  res.json(conversation);
 });
 
-// GET Conversations List
-app.get('/api/conversations', (req, res) => {
-  const currentUserId = getUserId(req);
-  if (!currentUserId) return res.status(401).json({ error: 'Unauthorized' });
+// ===== MESSAGES API =====
 
-  const userConvos = conversations.filter(c => c.participants.includes(currentUserId));
-  res.json(userConvos);
-});
-
-// 4. Get Messages: GET /api/messages/:conversationId
-app.get('/api/messages/:conversationId', (req, res) => {
+app.get('/api/messages/:conversationId', async (req, res) => {
   const { conversationId } = req.params;
-  const filteredMessages = messagesStore.filter(m => m.conversationId === conversationId);
-  res.json(filteredMessages.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()));
+  const userId = getUserId(req);
+
+  try {
+    const { data: messages, error } = await supabase
+      .from('messages')
+      .select('*')
+      .eq('conversationid', conversationId) // FIXED: lowered case
+      .order('timestamp', { ascending: true });
+
+    if (error) throw error;
+
+    if (userId) {
+      await supabase
+        .from('messages')
+        .update({ isread: true }) // FIXED: lowered case
+        .eq('conversationid', conversationId) // FIXED: lowered case
+        .neq('senderid', userId) // FIXED: lowered case
+        .eq('isread', false); // FIXED: lowered case
+    }
+
+    // Map back senderId to senderId for Frontend compatibility
+    const mappedMessages = (messages || []).map(m => ({
+      ...m,
+      senderId: m.senderid
+    }));
+
+    res.json(mappedMessages);
+  } catch (err) {
+    console.error('Error fetching messages:', err);
+    res.status(500).json({ error: 'Failed' });
+  }
 });
 
-// 3. Send Message: POST /api/messages
-app.post('/api/messages', (req, res) => {
+app.post('/api/messages', async (req, res) => {
   const currentUserId = getUserId(req);
   const { conversationId, text } = req.body;
 
   if (!currentUserId || !conversationId || !text) return res.status(400).json({ error: 'Missing fields' });
 
-  const newMessage: Message = {
-    id: uuidv4(),
-    conversationId,
-    senderId: currentUserId,
-    text,
-    timestamp: new Date().toISOString(),
-    seen: false
-  };
+  try {
+    const { data: newMessage, error: msgError } = await supabase
+      .from('messages')
+      .insert({
+        conversationid: conversationId, // FIXED: lowered case
+        senderid: currentUserId, // FIXED: lowered case
+        text,
+        timestamp: new Date().toISOString()
+      })
+      .select()
+      .single();
 
-  messagesStore.push(newMessage);
-  saveFile(MESSAGES_FILE, messagesStore);
+    if (msgError) throw msgError;
 
-  // Update conversation last message
-  const convo = conversations.find(c => c.id === conversationId);
-  if (convo) {
-    convo.lastMessage = text;
-    convo.updatedAt = new Date().toISOString();
-    saveFile(CONVERSATIONS_FILE, conversations);
+    await supabase
+      .from('conversations')
+      .update({
+        lastmessage: text, // FIXED: lowered case
+        updatedat: newMessage.timestamp // FIXED: lowered case
+      })
+      .eq('id', conversationId);
+
+    const result = {
+      ...newMessage,
+      senderId: newMessage.senderid
+    };
+
+    io.to(conversationId).emit('new_message', result);
+
+    res.status(201).json(result);
+  } catch (err) {
+    console.error('Error sending message:', err);
+    res.status(500).json({ error: 'Failed' });
   }
-
-  // Emit to listeners in this conversation
-  io.to(conversationId).emit('new_message', newMessage);
-
-  res.status(201).json(newMessage);
 });
 
-// ===== SOCKET.IO REAL-TIME =====
+// ===== SOCKET.IO LOGIC =====
+const onlineUsers = new Map<string, string>();
+
 io.on('connection', (socket) => {
-  console.log('User connected:', socket.id);
+  socket.on('authenticate', (userId: string) => {
+    onlineUsers.set(userId, socket.id);
+    io.emit('user_status_change', { userId, status: 'online' });
+  });
 
   socket.on('join_room', (roomId) => {
     socket.join(roomId);
-    console.log(`User joined room: ${roomId}`);
   });
 
   socket.on('typing', ({ roomId, userId }) => {
@@ -166,18 +227,32 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', () => {
-    console.log('User disconnected');
+    for (const [uId, sId] of onlineUsers.entries()) {
+      if (sId === socket.id) {
+        onlineUsers.delete(uId);
+        io.emit('user_status_change', { userId: uId, status: 'offline' });
+        break;
+      }
+    }
   });
 });
 
-// ===== SERVE FRONTEND (PORT UPDATED) =====
-const rootDir = path.resolve();
-app.use(express.static(path.join(rootDir, "Frontend/dist")));
-app.get("*", (req, res) => {
-  res.sendFile(path.join(rootDir, "Frontend/dist/index.html"));
-});
+// ===== STATIC ASSETS & SPA ROUTING =====
+const rootDir = path.join(__dirname, '..', '..');
+const frontendDistPath = path.join(rootDir, "Frontend", "dist");
 
+if (fs.existsSync(frontendDistPath)) {
+  app.use(express.static(frontendDistPath));
+  app.get("*", (req, res, next) => {
+    if (req.path.startsWith('/api')) return next();
+    res.sendFile(path.join(frontendDistPath, "index.html"));
+  });
+} else {
+  app.get("/", (req, res) => {
+    res.json({ message: "Community API Connected" });
+  });
+}
 
 httpServer.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`🚀 Backend running on port ${PORT} with Supabase DB`);
 });
