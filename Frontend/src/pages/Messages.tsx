@@ -45,7 +45,7 @@ export default function Messages() {
     const fetchConversations = async () => {
       setLoading(true);
       try {
-        const BACKEND_URL = import.meta.env.VITE_API_URL || 'http://localhost:10000';
+        const BACKEND_URL = (import.meta.env.VITE_API_URL || 'http://localhost:10000').replace(/\/$/, '');
         const response = await fetch(`${BACKEND_URL}/api/conversations`, {
           headers: { 'x-user-id': user.id }
         });
@@ -90,8 +90,8 @@ export default function Messages() {
     if (user && targetUserId) {
       const openChatWithUser = async () => {
         try {
-          const BACKEND_URL = import.meta.env.VITE_API_URL || 'http://localhost:10000';
-        const response = await fetch(`${BACKEND_URL}/api/conversations`, {
+          const BACKEND_URL = (import.meta.env.VITE_API_URL || 'http://localhost:10000').replace(/\/$/, '');
+          const response = await fetch(`${BACKEND_URL}/api/conversations`, {
             method: 'POST',
             headers: { 
               'Content-Type': 'application/json',

@@ -39,7 +39,7 @@ export function Sidebar({ onOpenPostModal }: SidebarProps) {
 
     const fetchBadgeCounts = async () => {
       try {
-        const BACKEND_URL = import.meta.env.VITE_API_URL || 'http://localhost:10000';
+        const BACKEND_URL = (import.meta.env.VITE_API_URL || 'http://localhost:10000').replace(/\/$/, '');
         // 1. Fetch Conversations to calculate total unread messages
         const convResponse = await fetch(`${BACKEND_URL}/api/conversations`, {
           headers: { 'x-user-id': user.id }

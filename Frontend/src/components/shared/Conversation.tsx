@@ -24,7 +24,7 @@ interface ConversationProps {
   onBack: () => void;
 }
 
-const BACKEND_URL = import.meta.env.VITE_API_URL || 'http://localhost:10000';
+const BACKEND_URL = (import.meta.env.VITE_API_URL || 'http://localhost:10000').replace(/\/$/, '');
 const socket = io(BACKEND_URL);
 
 export default function Conversation({ chat, onBack }: ConversationProps) {
