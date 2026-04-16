@@ -21,13 +21,20 @@ interface ConversationProps {
 const BACKEND_URL = (import.meta.env.VITE_API_URL || 'http://localhost:10000').replace(/\/$/, '');
 const socket = io(BACKEND_URL);
 
+const COMMON_EMOJIS = ['😊', '😂', '😍', '🤔', '😎', '🔥', '👍', '❤️', '🙌', '✨', '👋', '🎉', '😢', '😡', '💯', '🙏'];
+
 export default function Conversation({ chat, onBack }: ConversationProps) {
   const { user } = useAuth();
   const [messages, setMessages] = useState<any[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [uploading, setUploading] = useState(false);
+  const [showEmojis, setShowEmojis] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
 
   // 1. Fetch History
   useEffect(() => {
@@ -66,12 +73,13 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
   }, [messages]);
 
   // 3. Send Message
-  const handleSend = async (text?: string, imageUrl?: string) => {
+  const handleSend = async (text?: string, imageUrl?: string, voiceUrl?: string) => {
     const content = text || newMessage;
-    if (!content.trim() && !imageUrl) return;
+    if (!content.trim() && !imageUrl && !voiceUrl) return;
     if (!user || !chat.id) return;
     
     setNewMessage('');
+    setShowEmojis(false);
 
     try {
       const response = await fetch(`${BACKEND_URL}/api/messages`, {
@@ -83,7 +91,8 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
         body: JSON.stringify({
           conversationId: chat.id,
           text: content,
-          imageUrl: imageUrl
+          imageUrl: imageUrl,
+          voiceUrl: voiceUrl
         })
       });
 
@@ -122,7 +131,51 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
     }
   };
 
-  // 5. Toggle Message Like
+  // 5. Voice Recording
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) audioChunksRef.current.push(e.data);
+      };
+
+      mediaRecorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        const fileName = `${user?.id}/voice-${Date.now()}.webm`;
+        
+        setUploading(true);
+        const { error } = await supabase.storage
+          .from('message-attachments')
+          .upload(fileName, audioBlob);
+
+        if (!error) {
+          const { data } = supabase.storage.from('message-attachments').getPublicUrl(fileName);
+          await handleSend('', '', data.publicUrl);
+        }
+        setUploading(false);
+        stream.getTracks().forEach(track => track.stop());
+      };
+
+      mediaRecorder.start();
+      setIsRecording(true);
+    } catch (err) {
+      console.error('Microphone error:', err);
+      alert('Could not access microphone');
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+    }
+  };
+
+  // 6. Toggle Message Like
   const toggleMessageLike = async (messageId: string) => {
     if (!user) return;
     const msg = messages.find(m => m.id === messageId);
@@ -198,11 +251,18 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
                 {msg.image_url && (
                   <img src={msg.image_url} alt="Attached" className="rounded-lg mb-2 max-w-full h-auto cursor-pointer hover:opacity-90" onClick={() => window.open(msg.image_url, '_blank')} />
                 )}
+                
+                {msg.voice_url && (
+                  <div className="mb-2">
+                    <audio src={msg.voice_url} controls className="h-8 max-w-[200px] bg-transparent invert rounded-full" />
+                  </div>
+                )}
+
                 {msg.text && <p className="text-sm font-medium leading-relaxed">{msg.text}</p>}
                 
                 <div className="flex items-center justify-between gap-4 mt-1">
                   <p className={`text-[10px] font-semibold ${isMe ? 'opacity-60' : 'text-gray-500'}`}>
-                    {new Date(msg.timestamp || msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    {new Date(msg.timestamp || msg.created_at || msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </p>
                   
                   <button 
@@ -218,6 +278,24 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
         })}
       </div>
 
+      {/* EMOJI PICKER MODAL */}
+      <AnimatePresence>
+        {showEmojis && (
+          <motion.div 
+            initial={{ opacity: 0, y: 10, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 10, scale: 0.9 }}
+            className="absolute bottom-20 left-4 bg-gray-800 border border-gray-700 rounded-2xl shadow-2xl p-4 grid grid-cols-4 gap-2 z-50 w-48"
+          >
+            {COMMON_EMOJIS.map(emoji => (
+              <button key={emoji} onClick={() => setNewMessage(prev => prev + emoji)} className="text-2xl hover:scale-125 transition-transform">
+                {emoji}
+              </button>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Input Area */}
       <div className="p-4 border-t border-gray-800 bg-transparent z-10">
         <div className="flex items-center gap-2 bg-gray-800 border border-gray-800 rounded-2xl px-4 py-2 shadow-inner">
@@ -229,14 +307,14 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
           >
             <Image className="w-5 h-5" />
           </button>
-          <button className="text-gray-500 hover:text-brand transition-colors">
+          <button onClick={() => setShowEmojis(!showEmojis)} className={`text-gray-500 hover:text-brand transition-colors ${showEmojis ? 'text-brand' : ''}`}>
             <Smile className="w-5 h-5" />
           </button>
           <input 
             type="text" 
-            placeholder={uploading ? "Uploading image..." : "Type a message..."}
+            placeholder={isRecording ? "Recording voice..." : uploading ? "Uploading..." : "Type a message..."}
             value={newMessage}
-            disabled={uploading}
+            disabled={uploading || isRecording}
             onChange={(e) => setNewMessage(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleSend()}
             className="flex-1 bg-transparent border-none outline-none text-white text-sm py-2 placeholder-gray-500"
@@ -249,7 +327,10 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
               <Send className="w-4 h-4 ml-0.5" />
             </button>
           ) : (
-            <button className="text-gray-500 hover:text-brand transition-colors">
+            <button 
+              onClick={isRecording ? stopRecording : startRecording}
+              className={`p-2 rounded-full transition-all duration-300 ${isRecording ? 'bg-red-500 text-white animate-pulse' : 'text-gray-500 hover:text-brand'}`}
+            >
               <Mic className="w-5 h-5" />
             </button>
           )}

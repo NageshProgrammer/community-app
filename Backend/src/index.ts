@@ -169,7 +169,7 @@ app.get('/api/messages/:conversationId', async (req, res) => {
 
 app.post('/api/messages', async (req, res) => {
   const currentUserId = getUserId(req);
-  const { conversationId, text, imageUrl } = req.body;
+  const { conversationId, text, imageUrl, voiceUrl } = req.body;
 
   if (!currentUserId || !conversationId) return res.status(400).json({ error: 'Missing fields' });
 
@@ -181,6 +181,7 @@ app.post('/api/messages', async (req, res) => {
         senderid: currentUserId, // FIXED: lowered case
         text,
         image_url: imageUrl,
+        voice_url: voiceUrl,
         timestamp: new Date().toISOString()
       })
       .select()
