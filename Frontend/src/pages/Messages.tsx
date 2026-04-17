@@ -19,6 +19,7 @@ type Chat = {
   sender: string;
   avatarColor: string;
   initials: string;
+  avatar_url?: string;
   lastMessage: string;
   timestamp: string;
   unreadCount: number;

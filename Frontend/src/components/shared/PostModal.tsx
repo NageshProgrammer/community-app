@@ -113,11 +113,13 @@ export function PostModal({ isOpen, onClose }: PostModalProps) {
 
             <div className="p-4 bg-transparent relative z-10">
               <div className="flex gap-4">
-                <img 
-                  src={avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.id || 'default'}`} 
-                  alt="Avatar" 
-                  className="w-12 h-12 rounded-full object-cover bg-gray-800 flex-shrink-0 shadow-sm" 
-                />
+                {avatarUrl || user?.id ? (
+                  <img 
+                    src={avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.id || 'default'}`} 
+                    alt="Avatar" 
+                    className="w-12 h-12 rounded-full object-cover bg-gray-800 flex-shrink-0 shadow-sm" 
+                  />
+                ) : null}
                 <div className="flex-1">
                   <textarea
                     ref={textareaRef} value={content} onChange={(e) => setContent(e.target.value)}

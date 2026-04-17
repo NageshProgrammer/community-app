@@ -174,6 +174,7 @@ app.post('/api/conversations', async (req, res) => {
           participants: allParticipants,
           name: name || 'New Group',
           is_group: true,
+          admins: [currentUserId],
           updatedat: new Date().toISOString()
         })
         .select()
@@ -195,6 +196,124 @@ app.post('/api/conversations', async (req, res) => {
     return res.status(400).json({ error: 'Missing targetUserId or participants array' });
   } catch (err: any) {
     console.error('CRITICAL BACKEND ERROR:', err.message || err);
+    res.status(500).json({ error: 'Failed' });
+  }
+});
+
+app.get('/api/conversations/:id/participants', async (req, res) => {
+  const { id } = req.params;
+  const userId = getUserId(req);
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+  try {
+    const { data: convo, error: convoError } = await supabase
+      .from('conversations')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (convoError) throw convoError;
+    if (!convo) return res.status(404).json({ error: 'Conversation not found' });
+
+    const participantIds = Array.isArray(convo.participants) ? convo.participants : [];
+    if (participantIds.length === 0) return res.json([]);
+
+    const { data: profiles, error: profilesError } = await supabase
+      .from('profiles')
+      .select('id, full_name, username, avatar_url')
+      .in('id', participantIds);
+
+    if (profilesError) throw profilesError;
+
+    const participantsWithAdmin = (profiles || []).map(p => ({
+      ...p,
+      isAdmin: Array.isArray(convo.admins) ? convo.admins.includes(p.id) : (participantIds[0] === p.id) 
+    }));
+
+    res.json(participantsWithAdmin);
+  } catch (err: any) {
+    console.error('Error fetching participants:', err.message || err);
+    res.status(500).json({ error: 'Failed' });
+  }
+});
+
+app.post('/api/conversations/:id/action', async (req, res) => {
+  const { id } = req.params;
+  const { action, targetUserId } = req.body;
+  const currentUserId = getUserId(req);
+  if (!currentUserId) return res.status(401).json({ error: 'Unauthorized' });
+
+  try {
+    const { data: convo, error: convoError } = await supabase
+      .from('conversations')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (convoError) throw convoError;
+    if (!convo) return res.status(404).json({ error: 'Conversation not found' });
+
+    const participantIds = Array.isArray(convo.participants) ? convo.participants : [];
+    const isAdmin = Array.isArray(convo.admins) ? convo.admins.includes(currentUserId) : (participantIds[0] === currentUserId);
+    
+    let updatedParticipants = [...participantIds];
+    let updatedAdmins = Array.isArray(convo.admins) ? [...convo.admins] : (participantIds[0] ? [participantIds[0]] : []);
+
+    if (action === 'update-avatar') {
+       if (!isAdmin) return res.status(403).json({ error: 'Only admins can update group avatar' });
+       const { avatarUrl } = req.body;
+       if (!avatarUrl) return res.status(400).json({ error: 'Missing avatarUrl' });
+
+       const { error: updateError } = await supabase
+         .from('conversations')
+         .update({ 
+           avatar_url: avatarUrl,
+           updatedat: new Date().toISOString()
+         })
+         .eq('id', id);
+
+       if (updateError) throw updateError;
+       return res.json({ success: true, avatarUrl });
+    }
+
+    if (action === 'exit') {
+      updatedParticipants = updatedParticipants.filter(p => p !== currentUserId);
+      updatedAdmins = updatedAdmins.filter(a => a !== currentUserId);
+    } else if (action === 'make-admin') {
+      if (!isAdmin) return res.status(403).json({ error: 'Only admins can make other members admins' });
+      if (!updatedAdmins.includes(targetUserId)) {
+        updatedAdmins.push(targetUserId);
+      }
+    } else if (action === 'remove') {
+      if (!isAdmin) return res.status(403).json({ error: 'Only admins can remove members' });
+      updatedParticipants = updatedParticipants.filter(p => p !== targetUserId);
+      updatedAdmins = updatedAdmins.filter(a => a !== targetUserId);
+    } else if (action === 'add-members') {
+      if (!isAdmin) return res.status(403).json({ error: 'Only admins can add members' });
+      const { newParticipants } = req.body;
+      if (Array.isArray(newParticipants)) {
+        updatedParticipants = Array.from(new Set([...updatedParticipants, ...newParticipants]));
+      }
+    } else {
+      return res.status(400).json({ error: 'Invalid action' });
+    }
+
+    // Build update object dynamically to avoid errors if columns are missing
+    const updateData: any = { participants: updatedParticipants };
+    if (convo.hasOwnProperty('admins')) {
+      updateData.admins = updatedAdmins;
+    }
+
+    const { error: updateError } = await supabase
+      .from('conversations')
+      .update(updateData)
+      .eq('id', id);
+
+    if (updateError) throw updateError;
+
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error('Error performing group action:', err.message || err);
     res.status(500).json({ error: 'Failed' });
   }
 });

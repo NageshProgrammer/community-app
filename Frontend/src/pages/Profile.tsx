@@ -14,6 +14,7 @@ import { useAuth } from "../context/AuthContext";
 import { supabase } from "../utils/supabase";
 import { useParams, useNavigate } from "react-router-dom";
 import { useSocial } from "../context/SocialContext";
+import { usePosts } from "../context/PostContext";
 
 const TABS = ["Posts", "Replies", "Media", "Likes"];
 
@@ -62,6 +63,7 @@ export function Profile() {
   const [followingLoading, setFollowingLoading] = useState(false);
   const { user: currentUser } = useAuth();
   const { followingIds, toggleFollow, followerCounts } = useSocial();
+  const { toggleLike, toggleRepost, addComment } = usePosts();
 
   const targetUserId = id || currentUser?.id;
   const isOwnProfile = !id || id === currentUser?.id;
@@ -140,11 +142,12 @@ export function Profile() {
         setFollowerCount(fetchedFollowers || 0);
         setFollowingCount(fetchedFollowing || 0);
 
-        const { data: postsData } = await supabase
+        const { data: postsData, error: postsError } = await supabase
           .from("posts")
           .select(
             `
             *,
+            author:profiles!author_id (*),
             likes:post_likes!post_id(count),
             comments:post_comments!post_id(count),
             reposts:post_reposts!post_id(count)
@@ -153,31 +156,80 @@ export function Profile() {
           .eq("author_id", targetUserId)
           .order("created_at", { ascending: false });
 
-        if (postsData) {
-          const mappedPosts: PostData[] = (postsData as any[]).map(
-            (post: any) => ({
-              id: post.id,
-              author: {
-                id: targetUserId,
-                name:
-                  activeProfile?.full_name ||
-                  activeProfile?.username ||
-                  `User ${targetUserId.substring(0, 5)}`,
-                handle:
-                  activeProfile?.username ||
-                  `user_${targetUserId.substring(0, 5)}`,
-                avatar:
-                  activeProfile?.avatar_url ||
-                  `https://api.dicebear.com/7.x/avataaars/svg?seed=${targetUserId}`,
-              },
-              content: post.content,
-              timestamp: new Date(post.created_at).toLocaleString(),
-              likes: post.likes?.[0]?.count || 0,
-              comments: post.comments?.[0]?.count || 0,
-              reposts: post.reposts?.[0]?.count || 0,
-              isLiked: false,
-              isReposted: false,
-            }),
+        // Also fetch direct reposts (items in post_reposts table)
+        const { data: directRepostsData } = await supabase
+          .from("post_reposts")
+          .select(`
+            post:posts (
+              *,
+              author:profiles!author_id (*),
+              likes:post_likes!post_id(count),
+              comments:post_comments!post_id(count),
+              reposts:post_reposts!post_id(count)
+            )
+          `)
+          .eq("user_id", targetUserId);
+
+        const allVisiblePosts = [...(postsData || [])];
+        if (directRepostsData) {
+           directRepostsData.forEach((item: any) => {
+              if (item.post && !allVisiblePosts.find(p => p.id === item.post.id)) {
+                 allVisiblePosts.push(item.post);
+              }
+           });
+        }
+        
+        allVisiblePosts.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+        if (allVisiblePosts.length > 0) {
+          const likedResponse = currentUser
+            ? await supabase.from('post_likes').select('post_id').eq('user_id', currentUser.id)
+            : { data: [] };
+          const repostedResponse = currentUser
+            ? await supabase.from('post_reposts').select('post_id').eq('user_id', currentUser.id)
+            : { data: [] };
+
+          const likedIds = likedResponse.data?.map((item: any) => item.post_id) ?? [];
+          const repostedIds = repostedResponse.data?.map((item: any) => item.post_id) ?? [];
+
+          const mappedPosts: PostData[] = allVisiblePosts.map(
+            (post: any) => {
+               const authorProfile = post.author;
+               return {
+                  id: post.id,
+                  author: {
+                    id: post.author_id,
+                    name: authorProfile?.full_name || 'User',
+                    handle: authorProfile?.username || 'user',
+                    avatar: authorProfile?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${post.author_id}`,
+                  },
+                  content: post.content,
+                  timestamp: new Date(post.created_at).toLocaleString(),
+                  likes: post.likes?.[0]?.count || 0,
+                  comments: post.comments?.[0]?.count || 0,
+                  reposts: post.reposts?.[0]?.count || 0,
+                  isLiked: likedIds.includes(post.id),
+                  isReposted: repostedIds.includes(post.id),
+                  image: post.image,
+                  location: post.location,
+                  reposted_post_id: post.reposted_post_id,
+                  original_post: post.original_post ? {
+                    id: post.original_post.id,
+                    author: {
+                      id: post.original_post.author_id,
+                      name: post.original_post.author?.full_name || 'User',
+                      handle: post.original_post.author?.username || 'user',
+                      avatar: post.original_post.author?.avatar_url || ''
+                    },
+                    content: post.original_post.content,
+                    timestamp: new Date(post.original_post.created_at).toLocaleString(),
+                   likes: post.original_post.likes?.[0]?.count || 0,
+                   comments: post.original_post.comments?.[0]?.count || 0,
+                   reposts: post.original_post.reposts?.[0]?.count || 0,
+                   image: post.original_post.image
+                  } : null
+               };
+            }
           );
           setPosts(mappedPosts);
         }
@@ -617,11 +669,11 @@ export function Profile() {
                 key={post.id}
                 post={post}
                 index={idx}
-                onLike={() => {}}
-                onComment={() => {}}
-                onRepost={() => {}}
-                activeDropdownId={activeDropdownId} // <-- ADD THIS
-                setActiveDropdownId={setActiveDropdownId} // <-- ADD THIS
+                onLike={() => toggleLike(post.id)}
+                onComment={(content) => addComment(post.id, content)}
+                onRepost={() => toggleRepost(post.id)}
+                activeDropdownId={activeDropdownId} 
+                setActiveDropdownId={setActiveDropdownId}
               />
             ))}
             {posts.length === 0 && !loading && (

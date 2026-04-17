@@ -1,8 +1,28 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import type { ReactNode } from 'react';
-import { type PostData } from '../components/feed/Post';
 import { useAuth } from './AuthContext';
 import { supabase } from '../utils/supabase';
+
+export interface PostData {
+  id: string;
+  author: {
+    id: string;
+    name: string;
+    handle: string;
+    avatar: string;
+  };
+  content: string;
+  timestamp: string;
+  likes: number;
+  comments: number;
+  reposts: number;
+  isLiked?: boolean;
+  isReposted?: boolean;
+  image?: string | null;     
+  location?: string | null;  
+  reposted_post_id?: string | null;
+  original_post?: PostData | null;
+}
 
 export interface CommentData {
   id: string;
@@ -16,11 +36,13 @@ export interface CommentData {
   created_at: string;
 }
 
+
 interface PostContextType {
   posts: PostData[];
-  addPost: (content: string, userId: string, image?: string | null, location?: string | null) => Promise<void>;
+  addPost: (content: string, userId: string, image?: string | null, location?: string | null, reposted_post_id?: string | null) => Promise<void>;
   toggleLike: (postId: string) => Promise<void>;
   toggleRepost: (postId: string) => Promise<void>;
+  quoteRepost: (postId: string, content: string) => Promise<void>;
   addComment: (postId: string, content: string) => Promise<void>;
   getComments: (postId: string) => Promise<CommentData[]>;
   sharePost: (postId: string) => Promise<void>;
@@ -71,8 +93,45 @@ export function PostProvider({ children }: { children: ReactNode }) {
       const repostedIds = repostedResponse.data?.map((item: any) => item.post_id) ?? [];
 
       if (data && data.length > 0) {
+        const repostIdsToFetch = data
+          .filter(p => 'reposted_post_id' in p && p.reposted_post_id)
+          .map(p => p.reposted_post_id);
+
+        const { data: originalPostsData } = repostIdsToFetch.length > 0 
+          ? await supabase.from('posts').select(`
+              *, 
+              author:profiles!author_id(*),
+              likes:post_likes!post_id(count),
+              comments:post_comments!post_id(count),
+              reposts:post_reposts!post_id(count)
+            `).in('id', repostIdsToFetch)
+          : { data: [] };
+
         const mappedPosts: PostData[] = (data as any[]).map((post) => {
           const profile = Array.isArray(post.author) ? post.author[0] : post.author;
+          
+          let originalPost = null;
+          if ('reposted_post_id' in post && post.reposted_post_id) {
+             const orig = originalPostsData?.find(p => p.id === post.reposted_post_id);
+             if (orig) {
+                originalPost = {
+                   id: orig.id,
+                   author: {
+                      id: orig.author_id,
+                      name: orig.author?.full_name || 'User',
+                      handle: orig.author?.username || 'user',
+                      avatar: orig.author?.avatar_url || ''
+                   },
+                   content: orig.content,
+                   timestamp: new Date(orig.created_at).toLocaleString(),
+                   likes: orig.likes?.[0]?.count || 0,
+                   comments: orig.comments?.[0]?.count || 0,
+                   reposts: orig.reposts?.[0]?.count || 0,
+                   image: orig.image
+                };
+             }
+          }
+
           return {
             id: post.id,
             author: {
@@ -88,8 +147,10 @@ export function PostProvider({ children }: { children: ReactNode }) {
             reposts: post.reposts?.[0]?.count || 0,
             isLiked: likedIds.includes(post.id),
             isReposted: repostedIds.includes(post.id),
-            image: post.image || null, 
-            location: post.location || null, 
+            image: post.image || null,
+            location: post.location || null,
+            reposted_post_id: post.reposted_post_id,
+            original_post: originalPost
           };
         });
         setPosts(mappedPosts);
@@ -108,7 +169,7 @@ export function PostProvider({ children }: { children: ReactNode }) {
     fetchPosts();
   }, [fetchPosts]);
 
-  const addPost = useCallback(async (content: string, userId: string, image?: string | null, location?: string | null) => {
+  const addPost = useCallback(async (content: string, userId: string, image?: string | null, location?: string | null, reposted_post_id?: string | null) => {
     if (!userId) return;
     let publicImageUrl = null;
     try {
@@ -128,7 +189,8 @@ export function PostProvider({ children }: { children: ReactNode }) {
           content,
           title: content.substring(0, 50).trim(),
           image: publicImageUrl,
-          location: location || null
+          location: location || null,
+          reposted_post_id: reposted_post_id || null
         })
         .select();
 
@@ -156,8 +218,10 @@ export function PostProvider({ children }: { children: ReactNode }) {
         reposts: 0,
         isLiked: false,
         isReposted: false,
-        image: publicImageUrl, 
-        location: location || null, 
+        image: publicImageUrl,
+        location: location || null,
+        reposted_post_id: reposted_post_id,
+        original_post: reposted_post_id ? posts.find(p => p.id === reposted_post_id) : null
       };
 
       setPosts(prev => [mappedPost, ...prev]);
@@ -201,6 +265,11 @@ export function PostProvider({ children }: { children: ReactNode }) {
     }
     setPosts(prev => prev.map(p => p.id === postId ? { ...p, isReposted: !p.isReposted, reposts: p.reposts + (p.isReposted ? -1 : 1) } : p));
   }, [user, posts]);
+
+  const quoteRepost = useCallback(async (postId: string, content: string) => {
+    if (!user) return;
+    await addPost(content, user.id, null, null, postId);
+  }, [user, addPost]);
 
   const addComment = useCallback(async (postId: string, content: string) => {
     if (!user || !content.trim()) return;
@@ -270,14 +339,14 @@ export function PostProvider({ children }: { children: ReactNode }) {
   }, [user]);
 
   return (
-    <PostContext.Provider value={{ posts, addPost, toggleLike, toggleRepost, addComment, getComments, sharePost, deletePost, refreshPosts: fetchPosts, loading, error }}>
+    <PostContext.Provider value={{ posts, addPost, toggleLike, toggleRepost, quoteRepost, addComment, getComments, sharePost, deletePost, refreshPosts: fetchPosts, loading, error }}>
       {children}
     </PostContext.Provider>
   );
 }
 
-export const usePosts = () => { 
+export const usePosts = () => {
   const context = useContext(PostContext);
   if (!context) throw new Error('usePosts must be used within a PostProvider');
   return context;
-};
+};
