@@ -208,7 +208,7 @@ export function Profile() {
       // Upload image to Supabase Storage if a new file was selected
       if (avatarFile) {
         const fileExt = avatarFile.name.split(".").pop();
-        const fileName = `${currentUser.id}/${Date.now()}.${fileExt}`;
+        const fileName = `${currentUser.id}-${Date.now()}.${fileExt}`;
 
         // Upload to 'avatars' bucket
         const { error: uploadError } = await supabase.storage
@@ -277,13 +277,13 @@ export function Profile() {
         <button
           onClick={() => navigate(-1)}
           // Fixed: Changed text color to text-black for light mode
-          className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors text-black dark:text-white"
+          className="p-2 hover:bg-gray-800 rounded-full transition-colors text-white"
         >
           <ArrowLeft size={20} />
         </button>
         <div>
           {/* Fixed: Changed text color to text-black for light mode */}
-          <h2 className="text-xl font-bold text-black dark:text-white">
+          <h2 className="text-xl font-bold text-white">
             {profile?.full_name}
           </h2>
           <p className="text-xs text-gray-600 dark:text-gray-400">
@@ -566,6 +566,7 @@ export function Profile() {
                 onLike={() => {}}
                 onComment={() => {}}
                 onRepost={() => {}}
+                onShare={() => {}}
                 activeDropdownId={activeDropdownId} // <-- ADD THIS
                 setActiveDropdownId={setActiveDropdownId} // <-- ADD THIS
               />
