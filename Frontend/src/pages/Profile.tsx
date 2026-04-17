@@ -467,18 +467,11 @@ export function Profile() {
             </motion.div>
           ) : (
             <>
-              {/* Fixed: Changed text color to text-black for light mode */}
-              <h1 className="text-2xl font-bold  text-black dark:text-white leading-tight">
-                {profile?.full_name}
-              </h1>
-              {/* Fixed: Made the username a darker gray in light mode */}
-              <p className="text-gray-600 dark:text-gray-400">
-                @{profile?.username}
-              </p>
-
-              <p className="mt-3 text-[15px] text-gray-800 dark:text-gray-200 dark:opacity-80">
-                {profile?.bio}
-              </p>
+              
+               <h1 className="text-2xl font-bold text-white leading-tight">{profile?.full_name}</h1>
+              <p className="text-gray-500">@{profile?.username}</p>
+              
+              <p className="mt-3 text-[15px] text-gray-200">{profile?.bio}</p>
 
               <div className="flex flex-wrap gap-4 mt-3 text-gray-600 dark:text-gray-400 text-sm">
                 {profile?.website && (
@@ -511,7 +504,7 @@ export function Profile() {
               <div className="flex gap-4 mt-4 text-sm">
                 <p>
                   {/* Fixed: Changed count number to text-black for light mode */}
-                  <span className="text-black dark:text-white font-bold">
+                  <span className="text-white font-bold">
                     {isOwnProfile ? followingIds.length : followingCount}
                   </span>{" "}
                   <span className="text-gray-600 dark:text-gray-400">
@@ -520,7 +513,7 @@ export function Profile() {
                 </p>
                 <p>
                   {/* Fixed: Changed count number to text-black for light mode */}
-                  <span className="text-black dark:text-white font-bold">
+                  <span className="text-white font-bold">
                     {targetUserId && followerCounts[targetUserId] !== undefined
                       ? followerCounts[targetUserId]
                       : followerCount}
