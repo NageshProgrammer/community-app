@@ -114,7 +114,6 @@ export function Feed() {
                 onLike={() => toggleLike(post.id)}
                 onRepost={() => toggleRepost(post.id)}
                 onComment={(comment) => addComment(post.id, comment)}
-                onShare={() => sharePost(post.id)}
                 onDelete={() => deletePost(post.id)}
                 // NEW: Pass the dropdown state to each post
                 activeDropdownId={activeDropdownId}

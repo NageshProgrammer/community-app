@@ -31,13 +31,12 @@ interface PostProps {
   onLike: () => void;
   onRepost: () => void;
   onComment: (comment: string) => void;
-  onShare: () => void;
   onDelete?: () => void; 
   activeDropdownId: string | null;
   setActiveDropdownId: (id: string | null) => void;
 }
 
-export function Post({ post, index, onLike, onRepost, onComment, onShare, onDelete, activeDropdownId, setActiveDropdownId }: PostProps) {
+export function Post({ post, index, onLike, onRepost, onComment, onDelete, activeDropdownId, setActiveDropdownId }: PostProps) {
   const [commentText, setCommentText] = useState('');
   const [showCommentInput, setShowCommentInput] = useState(false);
   
@@ -107,8 +106,7 @@ export function Post({ post, index, onLike, onRepost, onComment, onShare, onDele
     }
   };
 
-  const handleToggleShare = (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleToggleShare = () => {
     if (showShareOptions) {
       setActiveDropdownId(null);
     } else {

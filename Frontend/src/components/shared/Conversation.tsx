@@ -22,7 +22,6 @@ interface ConversationProps {
 const BACKEND_URL = (import.meta.env.VITE_API_URL || 'http://localhost:10000').replace(/\/$/, '');
 const socket = io(BACKEND_URL);
 
-const COMMON_EMOJIS = ['😊', '😂', '😍', '🤔', '😎', '🔥', '👍', '❤️', '🙌', '✨', '👋', '🎉', '😢', '😡', '💯', '🙏'];
 
 export default function Conversation({ chat, onBack }: ConversationProps) {
   const { user } = useAuth();
