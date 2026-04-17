@@ -84,47 +84,117 @@ app.get('/api/conversations', async (req, res) => {
   }
 });
 
-app.post('/api/conversations', async (req, res) => {
+app.get('/api/conversations/with/:targetUserId', async (req, res) => {
   const currentUserId = getUserId(req);
-  const { targetUserId } = req.body;
+  const { targetUserId } = req.params;
 
   if (!currentUserId || !targetUserId) return res.status(400).json({ error: 'Missing IDs' });
 
   try {
-    const { data: existing } = await supabase
+    const { data: existing, error } = await supabase
       .from('conversations')
       .select('*')
+      .eq('is_group', false)
       .contains('participants', [currentUserId])
       .contains('participants', [targetUserId])
       .maybeSingle();
 
-    if (existing) {
+    if (error) throw error;
+    if (!existing) return res.status(404).json({ error: 'Not found' });
+
+    res.json({
+      ...existing,
+      updatedAt: existing.updatedat,
+      lastMessage: existing.lastmessage
+    });
+  } catch (err) {
+    console.error('Error finding conversation:', err);
+    res.status(500).json({ error: 'Failed' });
+  }
+});
+
+app.post('/api/conversations', async (req, res) => {
+  const currentUserId = getUserId(req);
+  const { targetUserId, participants, name } = req.body;
+
+  if (!currentUserId) return res.status(401).json({ error: 'Unauthorized' });
+
+  try {
+    // 1. If it's a single DM
+    if (targetUserId && !participants) {
+      const { data: existing, error: findError } = await supabase
+        .from('conversations')
+        .select('*')
+        .eq('is_group', false)
+        .contains('participants', [currentUserId])
+        .contains('participants', [targetUserId])
+        .maybeSingle();
+
+      if (findError) console.error('Database find error:', findError);
+
+      if (existing) {
+        return res.json({
+          ...existing, 
+          unreadCount: 0,
+          updatedAt: existing.updatedat,
+          lastMessage: existing.lastmessage
+        });
+      }
+
+      const { data: newConvo, error: insError } = await supabase
+        .from('conversations')
+        .insert({
+          participants: [currentUserId, targetUserId],
+          updatedat: new Date().toISOString(),
+          is_group: false
+        })
+        .select()
+        .single();
+
+      if (insError) {
+        console.error('DATABASE INSERT ERROR (DM):', insError);
+        throw insError;
+      }
+
       return res.json({
-        ...existing, 
+        ...newConvo, 
         unreadCount: 0,
-        updatedAt: existing.updatedat,
-        lastMessage: existing.lastmessage
+        updatedAt: newConvo.updatedat,
+        lastMessage: newConvo.lastmessage
       });
     }
 
-    const { data: newConvo, error } = await supabase
-      .from('conversations')
-      .insert({
-        participants: [currentUserId, targetUserId],
-        updatedat: new Date().toISOString()
-      })
-      .select()
-      .single();
+    // 2. If it's a Group creation
+    if (participants && Array.isArray(participants)) {
+      const allParticipants = Array.from(new Set([currentUserId, ...participants]));
+      
+      const { data: newGroup, error: groupError } = await supabase
+        .from('conversations')
+        .insert({
+          participants: allParticipants,
+          name: name || 'New Group',
+          is_group: true,
+          updatedat: new Date().toISOString()
+        })
+        .select()
+        .single();
 
-    if (error) throw error;
-    res.json({
-      ...newConvo, 
-      unreadCount: 0,
-      updatedAt: newConvo.updatedat,
-      lastMessage: newConvo.lastmessage
-    });
-  } catch (err) {
-    console.error('Error starting conversation:', err);
+      if (groupError) {
+        console.error('DATABASE INSERT ERROR (GROUP):', groupError);
+        throw groupError;
+      }
+
+      return res.json({
+        ...newGroup,
+        unreadCount: 0,
+        updatedAt: newGroup.updatedat,
+        lastMessage: 'Group created'
+      });
+    }
+
+    return res.status(400).json({ error: 'Missing targetUserId or participants array' });
+  } catch (err: any) {
+    console.error('CRITICAL BACKEND ERROR:', err.message || err);
     res.status(500).json({ error: 'Failed' });
   }
 });

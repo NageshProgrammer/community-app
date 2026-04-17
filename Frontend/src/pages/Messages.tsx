@@ -4,7 +4,8 @@ import {
   Edit, 
   MessageSquareOff, 
   CheckCheck,
-  Plus
+  Plus,
+  X
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -35,6 +36,15 @@ export default function Messages() {
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
   const { searchQuery } = useSocial();
   const [loading, setLoading] = useState(true);
+
+  // New Group States
+  const [showNewGroupModal, setShowNewGroupModal] = useState(false);
+  const [groupName, setGroupName] = useState('');
+  const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
+  const [followerSearch, setFollowerSearch] = useState('');
+  const [followingList, setFollowingList] = useState<any[]>([]);
+  const [loadingFollowers, setLoadingFollowers] = useState(false);
+  const [creatingGroup, setCreatingGroup] = useState(false);
 
   const activeSearch = searchQuery || localSearch;
 
@@ -89,41 +99,50 @@ export default function Messages() {
     const params = new URLSearchParams(location.search);
     const targetUserId = params.get('user_id');
 
-    if (user && targetUserId) {
+    // Only fetch if we have a target user AND we aren't already looking at that chat
+    if (user && targetUserId && selectedChatId === null) {
       const openChatWithUser = async () => {
         try {
           const BACKEND_URL = (import.meta.env.VITE_API_URL || 'http://localhost:10000').replace(/\/$/, '');
-          const response = await fetch(`${BACKEND_URL}/api/conversations`, {
-            method: 'POST',
-            headers: { 
-              'Content-Type': 'application/json',
-              'x-user-id': user.id 
-            },
-            body: JSON.stringify({ targetUserId })
+          const response = await fetch(`${BACKEND_URL}/api/conversations/with/${targetUserId}`, {
+            method: 'GET',
+            headers: { 'x-user-id': user.id }
           });
+          
+          let data;
+          if (response.status === 404) {
+             const createRes = await fetch(`${BACKEND_URL}/api/conversations`, {
+               method: 'POST',
+               headers: { 'Content-Type': 'application/json', 'x-user-id': user.id },
+               body: JSON.stringify({ targetUserId })
+             });
+             data = await createRes.json();
+          } else {
+             data = await response.json();
+          }
 
-          if (response.ok) {
-            const data = await response.json();
-            
-            // Check if we already have this chat in the state to avoid duplicates
-            if (!chats.find(c => c.id === data.id)) {
-              const { data: profile } = await supabase.from('profiles').select('full_name, username, avatar_url').eq('id', targetUserId).single();
-              
-              const newChat: Chat = {
-                id: data.id,
-                sender: profile?.full_name || profile?.username || 'User',
-                avatarColor: 'bg-brand',
-                initials: (profile?.full_name || 'U').substring(0, 1).toUpperCase(),
-                lastMessage: data.lastMessage || 'New conversation',
-                timestamp: 'Now',
-                unreadCount: 0,
-                isOnline: true,
-                targetUserId: targetUserId
-              };
-              setChats(prev => [newChat, ...prev]);
-            }
-            
+          if (data?.id) {
             setSelectedChatId(data.id);
+            
+            // Add to chats list if not already there
+            if (!chats.find(c => c.id === data.id)) {
+              const otherParticipantId = data.participants.find((p: string) => p !== user.id);
+              if (otherParticipantId) {
+                const { data: profile } = await supabase.from('profiles').select('full_name, username, avatar_url').eq('id', otherParticipantId).single();
+                const newChat = {
+                  id: data.id,
+                  sender: profile?.full_name || 'User',
+                  avatarColor: 'bg-brand',
+                  initials: (profile?.full_name || 'U')[0].toUpperCase(),
+                  lastMessage: 'New conversation',
+                  timestamp: 'Now',
+                  unreadCount: 0,
+                  isOnline: true,
+                  targetUserId: otherParticipantId
+                };
+                setChats(prev => [newChat, ...prev]);
+              }
+            }
           }
         } catch (err) {
           console.error('Error starting conversation:', err);
@@ -132,7 +151,102 @@ export default function Messages() {
 
       openChatWithUser();
     }
-  }, [location.search, user, chats.length]);
+  }, [location.search, user, selectedChatId]); 
+
+  // Fetch Following for Group Creation
+  useEffect(() => {
+    if (showNewGroupModal && user) {
+      const fetchFollowing = async () => {
+        setLoadingFollowers(true);
+        try {
+          const { data, error } = await supabase
+            .from('follows')
+            .select(`
+              following_user_id,
+              user:profiles!following_user_id (
+                id,
+                username,
+                full_name,
+                avatar_url
+              )
+            `)
+            .eq('follower_id', user.id);
+
+          if (error) throw error;
+          const profiles = data.map(d => d.user).filter(p => p !== null);
+          setFollowingList(profiles);
+        } catch (err) {
+          console.error('Error fetching followers for group:', err);
+        } finally {
+          setLoadingFollowers(false);
+        }
+      };
+      fetchFollowing();
+    }
+  }, [showNewGroupModal, user]);
+
+  const handleCreateGroup = async () => {
+    if (!user || selectedUsers.length === 0) return;
+    
+    setCreatingGroup(true);
+    try {
+      const BACKEND_URL = (import.meta.env.VITE_API_URL || 'http://localhost:10000').replace(/\/$/, '');
+      const response = await fetch(`${BACKEND_URL}/api/conversations`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-user-id': user.id 
+        },
+        body: JSON.stringify({ 
+          participants: selectedUsers,
+          name: groupName || 'New Group'
+        })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        
+        // Add to local state
+        const newChat: Chat = {
+          id: data.id,
+          sender: data.name || 'New Group',
+          avatarColor: 'bg-brand',
+          initials: (data.name || 'G').substring(0, 1).toUpperCase(),
+          lastMessage: 'Group created',
+          timestamp: 'Now',
+          unreadCount: 0,
+          isOnline: true,
+          isGroup: true
+        };
+        
+        setChats(prev => [newChat, ...prev]);
+        setSelectedChatId(data.id);
+        setShowNewGroupModal(false);
+        setGroupName('');
+        setSelectedUsers([]);
+      }
+    } catch (err) {
+      console.error('Error creating group:', err);
+      alert('Failed to create group');
+    } finally {
+      setCreatingGroup(false);
+    }
+  };
+
+  const toggleUserSelection = (userId: string) => {
+    setSelectedUsers(prev => 
+      prev.includes(userId) 
+        ? prev.filter(id => id !== userId) 
+        : [...prev, userId]
+    );
+  };
+
+  const filteredFollowers = useMemo(() => {
+    return followingList.filter(u => 
+      u.full_name.toLowerCase().includes(followerSearch.toLowerCase()) ||
+      u.username.toLowerCase().includes(followerSearch.toLowerCase())
+    );
+  }, [followingList, followerSearch]);
 
   // Derived state
   const totalUnread = chats.reduce((sum, chat) => sum + chat.unreadCount, 0);
@@ -197,7 +311,8 @@ export default function Messages() {
               <CheckCheck className="w-5 h-5" />
             </button>
             <button 
-              className="p-2 text-brand transition-colors"
+              onClick={() => setShowNewGroupModal(true)}
+              className="p-2 text-brand hover:bg-brand/10 rounded-full transition-colors"
               title="New Message"
             >
               <Edit className="w-5 h-5" />
@@ -347,14 +462,131 @@ export default function Messages() {
         </div>
       </div>
 
-      {/* FAB for Mobile */}
-      <motion.button 
-        whileHover={{ scale: 1.1 }}
-        whileTap={{ scale: 0.9 }}
-        className="fixed bottom-24 right-6 p-4 bg-brand text-brand-contrast rounded-full shadow-lg shadow-brand/40 md:hidden z-10"
-      >
-        <Plus size={24} />
-      </motion.button>
+      {/* New Group Modal */}
+      <AnimatePresence>
+        {showNewGroupModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowNewGroupModal(false)}
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            />
+            
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-md bg-white dark:bg-gray-900 rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh] border border-gray-200 dark:border-gray-800"
+            >
+              <div className="p-5 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between bg-white dark:bg-gray-900">
+                <h3 className="text-xl font-bold text-black dark:text-white">
+                  Create New Group
+                </h3>
+                <button 
+                  onClick={() => setShowNewGroupModal(false)}
+                  className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors text-gray-500"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-5 space-y-6">
+                {/* Group Name Input */}
+                <div className="space-y-2">
+                  <label className="text-xs font-bold uppercase text-gray-400 ml-1">Group Name</label>
+                  <input 
+                    type="text"
+                    value={groupName}
+                    onChange={(e) => setGroupName(e.target.value)}
+                    placeholder="Enter group name..."
+                    className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-800 rounded-2xl text-black dark:text-white focus:ring-2 focus:ring-brand focus:border-transparent outline-none transition-all"
+                  />
+                </div>
+
+                {/* Search Followers */}
+                <div className="space-y-2">
+                  <label className="text-xs font-bold uppercase text-gray-400 ml-1">Select Participants ({selectedUsers.length})</label>
+                  <div className="relative">
+                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                    <input 
+                      type="text"
+                      value={followerSearch}
+                      onChange={(e) => setFollowerSearch(e.target.value)}
+                      placeholder="Search followers..."
+                      className="w-full pl-11 pr-4 py-3 bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-800 rounded-2xl text-black dark:text-white focus:ring-1 focus:ring-brand focus:border-transparent outline-none transition-all text-sm"
+                    />
+                  </div>
+                </div>
+
+                {/* Followers List */}
+                <div className="space-y-1">
+                  {loadingFollowers ? (
+                    <div className="py-10 flex flex-col items-center gap-2">
+                      <div className="w-6 h-6 border-2 border-brand border-t-transparent rounded-full animate-spin" />
+                    </div>
+                  ) : filteredFollowers.length > 0 ? (
+                    filteredFollowers.map((profile) => (
+                      <div 
+                        key={profile.id}
+                        onClick={() => toggleUserSelection(profile.id)}
+                        className={`flex items-center gap-3 p-3 rounded-2xl cursor-pointer transition-all border ${
+                          selectedUsers.includes(profile.id) 
+                            ? 'bg-brand/10 border-brand/30' 
+                            : 'hover:bg-gray-50 dark:hover:bg-gray-800 border-transparent'
+                        }`}
+                      >
+                        <img 
+                          src={profile.avatar_url} 
+                          className="w-10 h-10 rounded-full object-cover" 
+                          alt={profile.full_name} 
+                        />
+                        <div className="flex-1 min-w-0">
+                          <p className="font-bold text-sm text-black dark:text-white truncate">{profile.full_name}</p>
+                          <p className="text-gray-500 text-xs text-brand">@{profile.username}</p>
+                        </div>
+                        <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${
+                          selectedUsers.includes(profile.id) 
+                            ? 'bg-brand border-brand' 
+                            : 'border-gray-300 dark:border-gray-600'
+                        }`}>
+                          {selectedUsers.includes(profile.id) && <CheckCheck className="w-3 h-3 text-brand-contrast" />}
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-center py-10 text-gray-500 text-sm italic">
+                      {followerSearch ? "No users found" : "You aren't following anyone yet."}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <div className="p-5 border-t border-gray-100 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/50">
+                <button
+                  disabled={selectedUsers.length === 0 || creatingGroup}
+                  onClick={handleCreateGroup}
+                  className={`w-full py-3.5 rounded-2xl font-bold flex items-center justify-center gap-2 transition-all ${
+                    selectedUsers.length > 0 && !creatingGroup
+                      ? 'bg-brand text-brand-contrast shadow-lg shadow-brand/30 hover:opacity-95'
+                      : 'bg-gray-200 dark:bg-gray-800 text-gray-400 dark:text-gray-600 cursor-not-allowed'
+                  }`}
+                >
+                  {creatingGroup ? (
+                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  ) : (
+                    <>
+                      <Plus className="w-5 h-5" />
+                      Create Group Conversation
+                    </>
+                  )}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

@@ -27,7 +27,7 @@ interface SupabaseNotification {
   message: string;
   created_at: string;
   is_read: boolean;
-  sender_id: string;
+  senderid: string;
   sender: {
     full_name: string;
     username: string;
@@ -48,7 +48,7 @@ export default function Notifications() {
         .from('notifications')
         .select(`
           *,
-          sender:profiles!sender_id (
+          sender:profiles!senderid (
             full_name,
             username,
             avatar_url
@@ -160,7 +160,7 @@ export default function Notifications() {
 
                     <div className="flex-shrink-0 relative">
                       <img 
-                        src={notification.sender?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${notification.sender_id}`} 
+                        src={notification.sender?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${notification.senderid}`} 
                         className="w-10 h-10 rounded-full border border-gray-700" 
                       />
                       <div className="absolute -bottom-1 -right-1 bg-dark rounded-full p-1 border border-gray-800">

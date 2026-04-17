@@ -1,5 +1,5 @@
 // src/components/layout/Sidebar.tsx
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Home, Bell, MessageSquare, User, MoreHorizontal, Bookmark, Settings, HelpCircle, Sun, Moon, LogOut } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { NavLink, useNavigate } from 'react-router-dom';
@@ -32,35 +32,35 @@ export function Sidebar({ onOpenPostModal }: SidebarProps) {
   // State for dynamic badge counts
   const [unreadMessages, setUnreadMessages] = useState(0);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
+  const lastFetchTime = useRef(0);
 
   // Fetch initial counts when sidebar loads
   useEffect(() => {
     if (!user) return;
 
     const fetchBadgeCounts = async () => {
+      // Throttle: Don't fetch if we've fetched in the last 15 seconds
+      const now = Date.now();
+      if (now - lastFetchTime.current < 15000) return;
+      lastFetchTime.current = now;
+
       try {
         const BACKEND_URL = (import.meta.env.VITE_API_URL || 'http://localhost:10000').replace(/\/$/, '');
-        // 1. Fetch Conversations to calculate total unread messages
-        const convResponse = await fetch(`${BACKEND_URL}/api/conversations`, {
-          headers: { 'x-user-id': user.id }
-        });
         
-        if (convResponse.ok) {
-          const conversations = await convResponse.json();
-          // Sum up unreadCount from all active chats
+        // Use parallel fetching to reduce connection time
+        const [convRes, notifRes] = await Promise.all([
+           fetch(`${BACKEND_URL}/api/conversations`, { headers: { 'x-user-id': user.id } }),
+           fetch(`${BACKEND_URL}/api/notifications`, { headers: { 'x-user-id': user.id } })
+        ]);
+        
+        if (convRes.ok) {
+          const conversations = await convRes.json();
           const totalUnreadMsgs = conversations.reduce((sum: number, chat: any) => sum + (chat.unreadCount || 0), 0);
           setUnreadMessages(totalUnreadMsgs);
         }
 
-        // 2. Fetch Notifications to calculate unread notifications
-        // Assuming you have this endpoint configured similarly on your backend
-        const notifResponse = await fetch(`${BACKEND_URL}/api/notifications`, {
-          headers: { 'x-user-id': user.id }
-        });
-        
-        if (notifResponse.ok) {
-          const notifications = await notifResponse.json();
-          // Count notifications where isRead is false
+        if (notifRes.ok) {
+          const notifications = await notifRes.json();
           const totalUnreadNotifs = notifications.filter((n: any) => !n.isRead).length;
           setUnreadNotifications(totalUnreadNotifs);
         }
@@ -71,11 +71,10 @@ export function Sidebar({ onOpenPostModal }: SidebarProps) {
 
     fetchBadgeCounts();
 
-    // Optional: Auto-refresh the counts every 30 seconds
-    const interval = setInterval(fetchBadgeCounts, 30000);
+    const interval = setInterval(fetchBadgeCounts, 60000);
     return () => clearInterval(interval);
 
-  }, [user]);
+  }, [user?.id]);
 
   const handleLogout = async () => {
     await signOut();

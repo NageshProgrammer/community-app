@@ -1,5 +1,4 @@
-// src/context/PostContext.tsx
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import type { ReactNode } from 'react';
 import { type PostData } from '../components/feed/Post';
 import { useAuth } from './AuthContext';
@@ -25,7 +24,7 @@ interface PostContextType {
   addComment: (postId: string, content: string) => Promise<void>;
   getComments: (postId: string) => Promise<CommentData[]>;
   sharePost: (postId: string) => Promise<void>;
-  deletePost: (postId: string) => Promise<void>; // FIXED: Added deletePost to the interface
+  deletePost: (postId: string) => Promise<void>;
   refreshPosts: () => Promise<void>;
   loading: boolean;
   error: string | null;
@@ -39,7 +38,7 @@ export function PostProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchPosts = async () => {
+  const fetchPosts = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -73,9 +72,7 @@ export function PostProvider({ children }: { children: ReactNode }) {
 
       if (data && data.length > 0) {
         const mappedPosts: PostData[] = (data as any[]).map((post) => {
-          // FIXED: Safely handle if Supabase returns the joined profile as an array
           const profile = Array.isArray(post.author) ? post.author[0] : post.author;
-          
           return {
             id: post.id,
             author: {
@@ -105,45 +102,32 @@ export function PostProvider({ children }: { children: ReactNode }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [user]);
 
   useEffect(() => {
     fetchPosts();
-  }, [user]);
+  }, [fetchPosts]);
 
-  const addPost = async (content: string, userId: string, image?: string | null, location?: string | null) => {
+  const addPost = useCallback(async (content: string, userId: string, image?: string | null, location?: string | null) => {
     if (!userId) return;
-
     let publicImageUrl = null;
-
     try {
-      // 1. Handle Image Upload if exists
       if (image && image.startsWith('blob:')) {
-        // Fetch the blob and upload
         const imageBlob = await fetch(image).then(r => r.blob());
         const fileName = `${userId}/${Date.now()}.jpg`;
-
-        const { error: uploadError } = await supabase.storage
-          .from('posts')
-          .upload(fileName, imageBlob);
-
+        const { error: uploadError } = await supabase.storage.from('posts').upload(fileName, imageBlob);
         if (uploadError) throw uploadError;
-
-        const { data: urlData } = supabase.storage
-          .from('posts')
-          .getPublicUrl(fileName);
-
+        const { data: urlData } = supabase.storage.from('posts').getPublicUrl(fileName);
         publicImageUrl = urlData.publicUrl;
       }
 
-      // 2. Insert Post to Database
       const { data, error: insertError } = await supabase
         .from('posts')
         .insert({
           author_id: userId,
           content,
           title: content.substring(0, 50).trim(),
-          image: publicImageUrl, // Save the REAL URL, not the blob
+          image: publicImageUrl,
           location: location || null
         })
         .select();
@@ -151,7 +135,6 @@ export function PostProvider({ children }: { children: ReactNode }) {
       if (insertError) throw insertError;
       if (!data || data.length === 0) throw new Error('Failed to create post');
 
-      const newPost = data[0];
       const { data: profileData } = await supabase
         .from('profiles')
         .select('username, full_name, avatar_url')
@@ -159,14 +142,14 @@ export function PostProvider({ children }: { children: ReactNode }) {
         .single();
 
       const mappedPost: PostData = {
-        id: newPost.id,
+        id: data[0].id,
         author: {
           id: userId,
           name: profileData?.full_name || 'Anonymous User',
           handle: profileData?.username || userId.substring(0, 5),
           avatar: profileData?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${userId}`
         },
-        content: newPost.content,
+        content: data[0].content,
         timestamp: 'Just now',
         likes: 0,
         comments: 0,
@@ -178,33 +161,20 @@ export function PostProvider({ children }: { children: ReactNode }) {
       };
 
       setPosts(prev => [mappedPost, ...prev]);
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Failed to create post';
+    } catch (err) {
       console.error('Error creating post:', err);
-      throw new Error(message);
     }
-  };
+  }, []);
 
-  const toggleLike = async (postId: string) => {
-    if (!user) throw new Error('User must be logged in to like post');
-
+  const toggleLike = useCallback(async (postId: string) => {
+    if (!user) return;
     const post = posts.find((p) => p.id === postId);
     if (!post) return;
 
-    const isLiked = post.isLiked;
-
-    if (isLiked) {
-      const { error } = await supabase
-        .from('post_likes')
-        .delete()
-        .match({ post_id: postId, user_id: user.id });
-      if (error) throw error;
+    if (post.isLiked) {
+      await supabase.from('post_likes').delete().match({ post_id: postId, user_id: user.id });
     } else {
-      const { error } = await supabase
-        .from('post_likes')
-        .insert({ post_id: postId, user_id: user.id });
-      if (error) throw error;
-
+      await supabase.from('post_likes').insert({ post_id: postId, user_id: user.id });
       if (user.id !== post.author.id) {
         const { data: profile } = await supabase.from('profiles').select('full_name, username').eq('id', user.id).single();
         await supabase.from('notifications').insert({
@@ -216,63 +186,28 @@ export function PostProvider({ children }: { children: ReactNode }) {
       }
     }
 
-    setPosts((prev) =>
-      prev.map((p) =>
-        p.id === postId
-          ? { ...p, isLiked: !p.isLiked, likes: p.likes + (p.isLiked ? -1 : 1) }
-          : p
-      )
-    );
-  };
+    setPosts(prev => prev.map(p => p.id === postId ? { ...p, isLiked: !p.isLiked, likes: p.likes + (p.isLiked ? -1 : 1) } : p));
+  }, [user, posts]);
 
-  const toggleRepost = async (postId: string) => {
-    if (!user) throw new Error('User must be logged in to repost');
-
-    const post = posts.find((p) => p.id === postId);
+  const toggleRepost = useCallback(async (postId: string) => {
+    if (!user) return;
+    const post = posts.find(p => p.id === postId);
     if (!post) return;
 
-    const isReposted = post.isReposted;
-
-    if (isReposted) {
-      const { error } = await supabase
-        .from('post_reposts')
-        .delete()
-        .match({ post_id: postId, user_id: user.id });
-      if (error) throw error;
+    if (post.isReposted) {
+      await supabase.from('post_reposts').delete().match({ post_id: postId, user_id: user.id });
     } else {
-      const { error } = await supabase
-        .from('post_reposts')
-        .insert({ post_id: postId, user_id: user.id });
-      if (error) throw error;
+      await supabase.from('post_reposts').insert({ post_id: postId, user_id: user.id });
     }
+    setPosts(prev => prev.map(p => p.id === postId ? { ...p, isReposted: !p.isReposted, reposts: p.reposts + (p.isReposted ? -1 : 1) } : p));
+  }, [user, posts]);
 
-    setPosts((prev) =>
-      prev.map((p) =>
-        p.id === postId
-          ? { ...p, isReposted: !p.isReposted, reposts: p.reposts + (p.isReposted ? -1 : 1) }
-          : p
-      )
-    );
-  };
-
-  const addComment = async (postId: string, content: string) => {
-    if (!user) throw new Error('User must be logged in to comment');
-
-    if (!content.trim()) return;
-
-    const { error } = await supabase
-      .from('post_comments')
-      .insert({ post_id: postId, user_id: user.id, content });
-
+  const addComment = useCallback(async (postId: string, content: string) => {
+    if (!user || !content.trim()) return;
+    const { error } = await supabase.from('post_comments').insert({ post_id: postId, user_id: user.id, content });
     if (error) throw error;
 
-    setPosts((prev) =>
-      prev.map((p) =>
-        p.id === postId
-          ? { ...p, comments: p.comments + 1 }
-          : p
-      )
-    );
+    setPosts(prev => prev.map(p => p.id === postId ? { ...p, comments: p.comments + 1 } : p));
 
     const post = posts.find(p => p.id === postId);
     if (post && user.id !== post.author.id) {
@@ -284,32 +219,19 @@ export function PostProvider({ children }: { children: ReactNode }) {
         message: `${profile?.full_name || profile?.username || 'Someone'} commented on your post!`
       });
     }
-  };
+  }, [user, posts]);
 
-  const getComments = async (postId: string): Promise<CommentData[]> => {
+  const getComments = useCallback(async (postId: string): Promise<CommentData[]> => {
     try {
       const { data, error } = await supabase
         .from('post_comments')
-        .select(`
-          id,
-          content,
-          created_at,
-          user_id,
-          author:profiles (
-            id,
-            username,
-            full_name,
-            avatar_url
-          )
-        `)
+        .select(`id, content, created_at, user_id, author:profiles (id, username, full_name, avatar_url)`)
         .eq('post_id', postId)
         .order('created_at', { ascending: true });
 
       if (error) throw error;
-
       return (data as any[]).map(comment => {
         const profile = Array.isArray(comment.author) ? comment.author[0] : comment.author;
-        
         return {
           id: comment.id,
           content: comment.content,
@@ -326,35 +248,26 @@ export function PostProvider({ children }: { children: ReactNode }) {
       console.error('Error fetching comments:', err);
       return [];
     }
-  };
+  }, []);
 
-  const sharePost = async (postId: string) => {
+  const sharePost = useCallback(async (postId: string) => {
     if (typeof navigator !== 'undefined' && navigator.clipboard) {
       const url = `${window.location.origin}/community?shared=${postId}`;
       await navigator.clipboard.writeText(url);
     }
     await toggleRepost(postId);
-  };
+  }, [toggleRepost]);
 
-  // FIXED: Added the deletePost function
-  const deletePost = async (postId: string) => {
-    if (!user) throw new Error('Must be logged in to delete a post');
-
+  const deletePost = useCallback(async (postId: string) => {
+    if (!user) return;
     try {
-      const { error } = await supabase
-        .from('posts')
-        .delete()
-        .eq('id', postId);
-
+      const { error } = await supabase.from('posts').delete().eq('id', postId);
       if (error) throw error;
-
-      // Instantly remove it from the UI state
       setPosts(prev => prev.filter(p => p.id !== postId));
     } catch (err) {
       console.error('Error deleting post:', err);
-      throw err;
     }
-  };
+  }, [user]);
 
   return (
     <PostContext.Provider value={{ posts, addPost, toggleLike, toggleRepost, addComment, getComments, sharePost, deletePost, refreshPosts: fetchPosts, loading, error }}>
@@ -367,4 +280,4 @@ export const usePosts = () => {
   const context = useContext(PostContext);
   if (!context) throw new Error('usePosts must be used within a PostProvider');
   return context;
-};
+};
