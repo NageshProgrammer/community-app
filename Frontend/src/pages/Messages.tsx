@@ -24,6 +24,7 @@ type Chat = {
   unreadCount: number;
   isOnline: boolean;
   targetUserId?: string; // Real user ID for Supabase DMs
+  isGroup?: boolean;
 };
 
 export default function Messages() {
