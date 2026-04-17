@@ -573,7 +573,6 @@ export function Profile() {
                 onLike={() => {}}
                 onComment={() => {}}
                 onRepost={() => {}}
-                onShare={() => {}}
                 activeDropdownId={activeDropdownId} // <-- ADD THIS
                 setActiveDropdownId={setActiveDropdownId} // <-- ADD THIS
               />

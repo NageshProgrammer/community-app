@@ -10,7 +10,7 @@ import { SearchX, ArrowLeft } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom'; 
 
 export function Feed() {
-  const { posts, addPost, toggleLike, toggleRepost, addComment, sharePost, deletePost } = usePosts();
+  const { posts, addPost, toggleLike, toggleRepost, addComment, deletePost } = usePosts();
   const { user } = useAuth();
   const { searchQuery, setSearchQuery } = useSocial();
   
@@ -115,7 +115,6 @@ export function Feed() {
                 onRepost={() => toggleRepost(post.id)}
                 onComment={(comment) => addComment(post.id, comment)}
                 onDelete={() => deletePost(post.id)}
-                // NEW: Pass the dropdown state to each post
                 activeDropdownId={activeDropdownId}
                 setActiveDropdownId={setActiveDropdownId}
               />
