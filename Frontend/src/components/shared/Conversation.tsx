@@ -84,7 +84,6 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
 
     setNewMessage('');
     setShowEmojis(false);
-    setReplyingTo(null);
 
     try {
       const response = await fetch(`${BACKEND_URL}/api/messages`, {
@@ -105,6 +104,7 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
       if (response.ok) {
         const sentMsg = await response.json();
         setMessages(prev => [...prev, sentMsg]);
+        setReplyingTo(null);
       }
     } catch (err) {
       console.error('Error sending message:', err);
@@ -242,6 +242,8 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
       >
         {messages.map((msg) => {
           const isMe = msg.senderId === user?.id;
+          const quote = Array.isArray(msg.reply_to) ? msg.reply_to[0] : msg.reply_to;
+
           return (
             <motion.div 
               initial={{ opacity: 0, y: 10 }}
@@ -255,31 +257,35 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
                   : 'bg-gray-800 text-white rounded-tl-sm border border-gray-800/50'
               }`}>
                 {/* QUOTED REPLY RENDER */}
-                {msg.reply_to && (
+                {quote && (
                   <div className={`mb-2 p-2 rounded-lg border-l-4 text-[11px] min-w-[120px] ${
                     isMe ? 'bg-black/30 border-brand' : 'bg-black/20 border-gray-500'
                   }`}>
-                    {chat.isGroup && (
+                    {/* Name: Show always in Groups, or if it isn't "me" in Private */}
+                    {(chat.isGroup || quote.senderid !== user?.id) && (
                       <p className={`font-bold mb-0.5 ${isMe ? 'text-brand' : 'text-gray-400'}`}>
-                        {msg.reply_to.senderid === user?.id ? 'You' : (msg.reply_to.author?.full_name || chat.sender)}
+                        {quote.senderid === user?.id ? 'You' : (quote.author?.full_name || chat.sender)}
                       </p>
                     )}
-                    <div className="flex items-center gap-1 text-white/90">
-                      {msg.reply_to.image_url && <Image size={10} className="text-gray-400" />}
-                      {msg.reply_to.voice_url && <Mic size={10} className="text-gray-400" />}
+                    {/* Special case: If Private and its "You", show "You" anyway for clarity like Image 1 */}
+                    {!chat.isGroup && quote.senderid === user?.id && (
+                       <p className={`font-bold mb-0.5 text-brand`}>You</p>
+                    )}
+
+                    <div className="flex items-center gap-1 opacity-90 text-white">
+                      {quote.image_url && <Image size={10} className="text-gray-400" />}
+                      {quote.voice_url && <Mic size={10} className="text-gray-400" />}
                       <span className="line-clamp-2 italic">
-                        {msg.reply_to.text || (msg.reply_to.image_url ? 'Photo' : msg.reply_to.voice_url ? 'Voice message' : 'Message')}
+                        {quote.text || (quote.image_url ? '📷 Photo' : quote.voice_url ? '🎤 Voice message' : 'Message')}
                       </span>
                     </div>
                   </div>
                 )}
 
-                {/* IMAGE RENDER */}
                 {msg.image_url && msg.image_url.startsWith('http') && (
                   <img src={msg.image_url} alt="Attached" className="rounded-lg mb-2 max-w-full h-auto cursor-pointer hover:opacity-90" onClick={() => window.open(msg.image_url, '_blank')} />
                 )}
                 
-                {/* VOICE RENDER */}
                 {msg.voice_url && msg.voice_url.startsWith('http') && (
                   <div className="mb-2">
                     <audio src={msg.voice_url} controls className="h-8 max-w-[200px] bg-transparent invert rounded-full" />
@@ -294,16 +300,10 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
                   </p>
                   
                   <div className="flex items-center gap-2">
-                    <button 
-                      onClick={() => setReplyingTo(msg)}
-                      className="text-gray-500 opacity-0 group-hover:opacity-100 hover:text-brand transition-all"
-                    >
+                    <button onClick={() => setReplyingTo(msg)} className="text-gray-500 opacity-0 group-hover:opacity-100 hover:text-brand transition-all">
                       <Reply size={12} />
                     </button>
-                    <button 
-                      onClick={() => toggleMessageLike(msg.id)}
-                      className={`transition-all duration-300 transform active:scale-150 ${msg.isLiked ? 'text-pink-500' : 'text-gray-500 opacity-0 group-hover:opacity-100'}`}
-                    >
+                    <button onClick={() => toggleMessageLike(msg.id)} className={`transition-all duration-300 transform active:scale-150 ${msg.isLiked ? 'text-pink-500' : 'text-gray-500 opacity-0 group-hover:opacity-100'}`}>
                       <Heart size={12} fill={msg.isLiked ? "currentColor" : "none"} />
                     </button>
                   </div>
@@ -321,33 +321,23 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            className="px-4 py-2 border-t border-gray-800 bg-gray-900 flex items-center justify-between gap-4"
+            className="px-4 py-3 border-t border-gray-800 bg-gray-900/95 flex items-center justify-between gap-4 backdrop-blur-md"
           >
-            <div className="flex-1 border-l-4 border-brand pl-3">
-              <p className="text-xs text-brand font-bold">Replying to {replyingTo.senderId === user?.id ? 'yourself' : chat.sender}</p>
-              <p className="text-xs text-gray-400 line-clamp-1">{replyingTo.text || (replyingTo.image_url ? '📷 Photo' : '🎤 Voice message')}</p>
+            <div className="flex-1 border-l-4 border-brand pl-3 py-1 bg-white/5 rounded-r-lg">
+              <p className="text-[11px] text-brand font-bold mb-0.5">
+                {replyingTo.senderId === user?.id ? 'You' : (replyingTo.author?.full_name || chat.sender)}
+              </p>
+              <div className="flex items-center gap-1 text-[11px] text-gray-400">
+                {replyingTo.image_url && <Image size={10} />}
+                {replyingTo.voice_url && <Mic size={10} />}
+                <p className="line-clamp-1 italic">
+                  {replyingTo.text || (replyingTo.image_url ? 'Photo' : replyingTo.voice_url ? 'Voice message' : 'Message')}
+                </p>
+              </div>
             </div>
-            <button onClick={() => setReplyingTo(null)} className="p-1 hover:bg-gray-800 rounded-full transition-colors">
+            <button onClick={() => setReplyingTo(null)} className="p-1.5 hover:bg-gray-800 rounded-full transition-colors">
               <X size={16} className="text-gray-500" />
             </button>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* EMOJI PICKER */}
-      <AnimatePresence>
-        {showEmojis && (
-          <motion.div 
-            initial={{ opacity: 0, y: 10, scale: 0.9 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 10, scale: 0.9 }}
-            className="absolute bottom-20 left-4 bg-gray-800 border border-gray-700 rounded-2xl shadow-2xl p-4 grid grid-cols-4 gap-2 z-50 w-48"
-          >
-            {COMMON_EMOJIS.map(emoji => (
-              <button key={emoji} onClick={() => setNewMessage(prev => prev + emoji)} className="text-2xl hover:scale-125 transition-transform">
-                {emoji}
-              </button>
-            ))}
           </motion.div>
         )}
       </AnimatePresence>
@@ -355,16 +345,11 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
       {/* Input Area */}
       <div className="p-4 border-t border-gray-800 bg-transparent z-10">
         <div className="flex items-center gap-2 bg-gray-800 border border-gray-800 rounded-2xl px-4 py-2 shadow-inner">
-          <button 
-            type="button"
-            disabled={uploading}
-            onClick={() => fileInputRef.current?.click()}
-            className={`text-gray-500 hover:text-brand transition-colors ${uploading ? 'animate-pulse' : ''}`}
-          >
+          <button type="button" disabled={uploading} onClick={() => fileInputRef.current?.click()} className={`text-gray-500 hover:text-brand transition-colors ${uploading ? 'animate-pulse' : ''}`}>
             <Image className="w-5 h-5" />
           </button>
           <button onClick={() => setShowEmojis(!showEmojis)} className={`text-gray-500 hover:text-brand transition-colors ${showEmojis ? 'text-brand' : ''}`}>
-            <Smile className="w-5 h-5" />
+             <Smile className="w-5 h-5" />
           </button>
           <input 
             type="text" 
@@ -376,17 +361,11 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
             className="flex-1 bg-transparent border-none outline-none text-white text-sm py-2 placeholder-gray-500"
           />
           {newMessage ? (
-            <button 
-              onClick={() => handleSend()}
-              className="p-2 bg-brand rounded-full text-brand-contrast hover:opacity-90 transition-opacity shadow-md"
-            >
+            <button onClick={() => handleSend()} className="p-2 bg-brand rounded-full text-brand-contrast hover:opacity-90 transition-opacity shadow-md">
               <Send className="w-4 h-4 ml-0.5" />
             </button>
           ) : (
-            <button 
-              onClick={isRecording ? stopRecording : startRecording}
-              className={`p-2 rounded-full transition-all duration-300 ${isRecording ? 'bg-red-500 text-white animate-pulse' : 'text-gray-500 hover:text-brand'}`}
-            >
+            <button onClick={isRecording ? stopRecording : startRecording} className={`p-2 rounded-full transition-all duration-300 ${isRecording ? 'bg-red-500 text-white animate-pulse' : 'text-gray-500 hover:text-brand'}`}>
               <Mic className="w-5 h-5" />
             </button>
           )}

@@ -57,7 +57,7 @@ app.get('/api/conversations', async (req, res) => {
       .from('conversations')
       .select('*')
       .contains('participants', [userId])
-      .order('updatedat', { ascending: false }); // FIXED: lowered case
+      .order('updatedat', { ascending: false });
 
     if (error) throw error;
 
@@ -65,14 +65,13 @@ app.get('/api/conversations', async (req, res) => {
       const { count } = await supabase
         .from('messages')
         .select('*', { count: 'exact', head: true })
-        .eq('conversationid', convo.id) // FIXED: lowered case
-        .eq('isread', false) // FIXED: lowered case
-        .neq('senderid', userId); // FIXED: lowered case
+        .eq('conversationid', convo.id)
+        .eq('isread', false)
+        .neq('senderid', userId);
 
       return {
         ...convo,
         unreadCount: count || 0,
-        // Map back to camelCase for the Frontend if necessary
         updatedAt: convo.updatedat,
         lastMessage: convo.lastmessage
       };
@@ -112,7 +111,7 @@ app.post('/api/conversations', async (req, res) => {
       .from('conversations')
       .insert({
         participants: [currentUserId, targetUserId],
-        updatedat: new Date().toISOString() // FIXED: lowered case
+        updatedat: new Date().toISOString()
       })
       .select()
       .single();
@@ -132,6 +131,17 @@ app.post('/api/conversations', async (req, res) => {
 
 // ===== MESSAGES API =====
 
+const MESSAGE_QUERY = `
+  *,
+  reply_to:messages!reply_to_id (
+    text,
+    senderid,
+    image_url,
+    voice_url,
+    author:profiles!senderid (full_name)
+  )
+`;
+
 app.get('/api/messages/:conversationId', async (req, res) => {
   const { conversationId } = req.params;
   const userId = getUserId(req);
@@ -139,35 +149,25 @@ app.get('/api/messages/:conversationId', async (req, res) => {
   try {
     const { data: messages, error } = await supabase
       .from('messages')
-      .select(`
-        *,
-        reply_to:messages (
-          text,
-          senderid,
-          image_url,
-          voice_url,
-          author:profiles!senderid (full_name)
-        )
-      `)
+      .select(MESSAGE_QUERY)
       .eq('conversationid', conversationId)
       .order('timestamp', { ascending: true });
 
     if (error) throw error;
 
-    if (userId) {
-      await supabase
-        .from('messages')
-        .update({ isread: true }) // FIXED: lowered case
-        .eq('conversationid', conversationId) // FIXED: lowered case
-        .neq('senderid', userId) // FIXED: lowered case
-        .eq('isread', false); // FIXED: lowered case
-    }
-
-    // Map back senderId to senderId for Frontend compatibility
     const mappedMessages = (messages || []).map(m => ({
       ...m,
       senderId: m.senderid
     }));
+
+    if (userId) {
+      await supabase
+        .from('messages')
+        .update({ isread: true })
+        .eq('conversationid', conversationId)
+        .neq('senderid', userId)
+        .eq('isread', false);
+    }
 
     res.json(mappedMessages);
   } catch (err) {
@@ -186,15 +186,15 @@ app.post('/api/messages', async (req, res) => {
     const { data: newMessage, error: msgError } = await supabase
       .from('messages')
       .insert({
-        conversationid: conversationId, // FIXED: lowered case
-        senderid: currentUserId, // FIXED: lowered case
+        conversationid: conversationId,
+        senderid: currentUserId,
         text,
         image_url: imageUrl,
         voice_url: voiceUrl,
-        reply_to_id: replyToId, // Added reply support
+        reply_to_id: replyToId,
         timestamp: new Date().toISOString()
       })
-      .select()
+      .select(MESSAGE_QUERY)
       .single();
 
     if (msgError) throw msgError;
@@ -202,8 +202,8 @@ app.post('/api/messages', async (req, res) => {
     await supabase
       .from('conversations')
       .update({
-        lastmessage: text, // FIXED: lowered case
-        updatedat: newMessage.timestamp // FIXED: lowered case
+        lastmessage: text || (imageUrl ? '📷 Photo' : voiceUrl ? '🎤 Voice message' : ''),
+        updatedat: newMessage.timestamp
       })
       .eq('id', conversationId);
 
@@ -213,7 +213,6 @@ app.post('/api/messages', async (req, res) => {
     };
 
     io.to(conversationId).emit('new_message', result);
-
     res.status(201).json(result);
   } catch (err) {
     console.error('Error sending message:', err);
