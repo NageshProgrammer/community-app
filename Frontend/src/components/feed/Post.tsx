@@ -1,7 +1,7 @@
 // src/components/feed/Post.tsx
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useEffect, useRef } from 'react';
-import { MessageCircle, Repeat, Heart, Share, MoreHorizontal, MapPin, Trash2, Link as LinkIcon } from 'lucide-react';
+import { MessageCircle, Repeat, Heart, Share, MoreHorizontal, MapPin, Trash2, Link as LinkIcon, Send } from 'lucide-react';
 import { usePosts, type CommentData } from '../../context/PostContext';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext'; 
@@ -31,13 +31,12 @@ interface PostProps {
   onLike: () => void;
   onRepost: () => void;
   onComment: (comment: string) => void;
-  onShare: () => void;
   onDelete?: () => void; 
   activeDropdownId: string | null;
   setActiveDropdownId: (id: string | null) => void;
 }
 
-export function Post({ post, index, onLike, onRepost, onComment, onShare, onDelete, activeDropdownId, setActiveDropdownId }: PostProps) {
+export function Post({ post, index, onLike, onRepost, onComment, onDelete, activeDropdownId, setActiveDropdownId }: PostProps) {
   const [commentText, setCommentText] = useState('');
   const [showCommentInput, setShowCommentInput] = useState(false);
   
@@ -54,6 +53,7 @@ export function Post({ post, index, onLike, onRepost, onComment, onShare, onDele
   
   // Determine if this specific post's dropdown is the active one
   const showOptions = activeDropdownId === post.id;
+  const showShareOptions = activeDropdownId === post.id + '-share';
 
   useEffect(() => {
     if (showCommentInput) {
@@ -104,6 +104,36 @@ export function Post({ post, index, onLike, onRepost, onComment, onShare, onDele
     } else {
       setActiveDropdownId(post.id); // Open this one (and close others)
     }
+  };
+
+  const handleToggleShare = () => {
+    if (showShareOptions) {
+      setActiveDropdownId(null);
+    } else {
+      setActiveDropdownId(post.id + '-share');
+    }
+  };
+
+  const shareToPlatform = (platform: 'whatsapp' | 'telegram' | 'messenger' | 'copy') => {
+    const url = `${window.location.origin}/community?shared=${post.id}`;
+    const text = `Check out this post on Community: ${post.content.substring(0, 100)}...`;
+    
+    switch (platform) {
+      case 'whatsapp':
+        window.open(`https://wa.me/?text=${encodeURIComponent(text + ' ' + url)}`, '_blank');
+        break;
+      case 'telegram':
+        window.open(`https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`, '_blank');
+        break;
+      case 'messenger':
+        // Standard Facebook sharer for Messenger compatibility
+        window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`, '_blank');
+        break;
+      case 'copy':
+        handleCopyLink();
+        break;
+    }
+    setActiveDropdownId(null);
   };
 
   return (
@@ -204,11 +234,43 @@ export function Post({ post, index, onLike, onRepost, onComment, onShare, onDele
           )}
 
           {/* Action Buttons */}
-          <div className="flex justify-between mt-4 text-gray-500 max-w-md">
+          <div className="flex justify-between mt-4 text-gray-400 max-w-md">
             <ActionIcon icon={MessageCircle} count={post.comments} hoverColor="hover:text-blue-500" hoverBg="group-hover:bg-blue-500/10" activeBg="bg-blue-500/10" isActive={showCommentInput} activeColor="text-blue-500" onClick={() => setShowCommentInput((prev) => !prev)} />
             <ActionIcon icon={Repeat} count={post.reposts} hoverColor="hover:text-green-500" hoverBg="group-hover:bg-green-500/10" activeBg="bg-green-500/10" isActive={post.isReposted ?? false} activeColor="text-green-500" onClick={onRepost} />
             <ActionIcon icon={Heart} count={post.likes} hoverColor="hover:text-pink-500" hoverBg="group-hover:bg-pink-500/10" activeBg="bg-pink-500/10" isActive={post.isLiked ?? false} activeColor="text-pink-500" fillIcon={post.isLiked ?? false} onClick={onLike} />
-            <ActionIcon icon={Share} hoverColor="hover:text-brand" hoverBg="group-hover:bg-brand/10" activeBg="bg-brand/10" isActive={false} activeColor="text-brand" onClick={onShare} />
+            
+            {/* Share Wrapper */}
+            <div className="relative">
+              <ActionIcon icon={Share} hoverColor="hover:text-brand" hoverBg="group-hover:bg-brand/10" activeBg="bg-brand/10" isActive={showShareOptions} activeColor="text-brand" onClick={handleToggleShare} />
+              
+              <AnimatePresence>
+                {showShareOptions && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={(e) => { e.stopPropagation(); setActiveDropdownId(null); }} />
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.9, y: 10 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.9, y: 10 }}
+                      className="absolute bottom-full mb-2 left-0 w-44 bg-white dark:bg-gray-900/95 backdrop-blur-xl border border-gray-200 dark:border-gray-700/50 rounded-2xl shadow-2xl overflow-hidden z-50 p-1"
+                    >
+                      <button onClick={() => shareToPlatform('whatsapp')} className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-xl transition-colors text-sm font-medium text-gray-700 dark:text-gray-200">
+                        <MessageCircle size={16} className="text-green-500" /> WhatsApp
+                      </button>
+                      <button onClick={() => shareToPlatform('telegram')} className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-xl transition-colors text-sm font-medium text-gray-700 dark:text-gray-200">
+                        <Send size={16} className="text-blue-400" /> Telegram
+                      </button>
+                      <button onClick={() => shareToPlatform('messenger')} className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-xl transition-colors text-sm font-medium text-gray-700 dark:text-gray-200">
+                        <Share size={16} className="text-blue-600" /> Messenger
+                      </button>
+                      <hr className="my-1 border-gray-200 dark:border-gray-800" />
+                      <button onClick={() => shareToPlatform('copy')} className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-xl transition-colors text-sm font-medium text-gray-700 dark:text-gray-200">
+                        <LinkIcon size={16} className="text-gray-400" /> Copy Link
+                      </button>
+                    </motion.div>
+                  </>
+                )}
+              </AnimatePresence>
+            </div>
           </div>
 
           <AnimatePresence>
@@ -298,7 +360,7 @@ function ActionIcon({ icon: Icon, count, hoverColor, hoverBg, activeBg, isActive
               key={count} initial={{ y: 15, opacity: 0, scale: 0.8 }} animate={{ y: 0, opacity: 1, scale: 1 }} exit={{ y: -15, opacity: 0, scale: 0.8 }} transition={{ type: "spring", stiffness: 300, damping: 25 }}
               className="text-sm font-medium text-left absolute"
             >
-              {count > 0 ? count : ''}
+              {count}
             </motion.span>
           </AnimatePresence>
         </div>

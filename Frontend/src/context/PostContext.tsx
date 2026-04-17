@@ -114,13 +114,37 @@ export function PostProvider({ children }: { children: ReactNode }) {
   const addPost = async (content: string, userId: string, image?: string | null, location?: string | null) => {
     if (!userId) return;
 
+    let publicImageUrl = null;
+
     try {
+      // 1. Handle Image Upload if exists
+      if (image && image.startsWith('blob:')) {
+        // Fetch the blob and upload
+        const imageBlob = await fetch(image).then(r => r.blob());
+        const fileName = `${userId}/${Date.now()}.jpg`;
+
+        const { error: uploadError } = await supabase.storage
+          .from('posts')
+          .upload(fileName, imageBlob);
+
+        if (uploadError) throw uploadError;
+
+        const { data: urlData } = supabase.storage
+          .from('posts')
+          .getPublicUrl(fileName);
+
+        publicImageUrl = urlData.publicUrl;
+      }
+
+      // 2. Insert Post to Database
       const { data, error: insertError } = await supabase
         .from('posts')
         .insert({
           author_id: userId,
           content,
           title: content.substring(0, 50).trim(),
+          image: publicImageUrl, // Save the REAL URL, not the blob
+          location: location || null
         })
         .select();
 
@@ -149,7 +173,7 @@ export function PostProvider({ children }: { children: ReactNode }) {
         reposts: 0,
         isLiked: false,
         isReposted: false,
-        image: image || null, 
+        image: publicImageUrl, 
         location: location || null, 
       };
 
@@ -270,6 +294,7 @@ export function PostProvider({ children }: { children: ReactNode }) {
           id,
           content,
           created_at,
+          user_id,
           author:profiles (
             id,
             username,

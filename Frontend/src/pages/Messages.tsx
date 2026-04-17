@@ -45,30 +45,33 @@ export default function Messages() {
     const fetchConversations = async () => {
       setLoading(true);
       try {
-        const response = await fetch('http://localhost:10000/api/conversations', {
+        const BACKEND_URL = (import.meta.env.VITE_API_URL || 'http://localhost:10000').replace(/\/$/, '');
+        const response = await fetch(`${BACKEND_URL}/api/conversations`, {
           headers: { 'x-user-id': user.id }
         });
         if (!response.ok) throw new Error('Failed to fetch');
         
         const data = await response.json();
         
-        // Enrich conversations with profile data from Supabase
-        const enrichedChats = await Promise.all(data.map(async (convo: any) => {
-          const targetId = convo.participants.find((p: string) => p !== user.id);
-          const { data: profile } = await supabase.from('profiles').select('full_name, username, avatar_url').eq('id', targetId).single();
-          
-          return {
-            id: convo.id,
-            sender: profile?.full_name || profile?.username || 'User',
-            avatarColor: 'bg-brand',
-            initials: (profile?.full_name || 'U').substring(0, 1).toUpperCase(),
-            lastMessage: convo.lastMessage || 'No messages yet',
-            timestamp: new Date(convo.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            unreadCount: 0,
-            isOnline: true,
-            targetUserId: targetId
-          };
-        }));
+      // Enrich conversations with profile data from Supabase
+      const enrichedChats = await Promise.all(data.map(async (convo: any) => {
+        const isGroup = convo.participants.length > 2 || convo.isGroup; // Fallback to isGroup flag if exists
+        const targetId = convo.participants.find((p: string) => p !== user.id);
+        const { data: profile } = await supabase.from('profiles').select('full_name, username').eq('id', targetId).single();
+        
+        return {
+          id: convo.id,
+          sender: isGroup ? (convo.name || "Group") : (profile?.full_name || profile?.username || 'User'),
+          avatarColor: 'bg-brand',
+          initials: (isGroup ? (convo.name || "G") : (profile?.full_name || 'U')).substring(0, 1).toUpperCase(),
+          lastMessage: convo.lastMessage || 'No messages yet',
+          timestamp: new Date(convo.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          unreadCount: 0,
+          isOnline: true,
+          targetUserId: targetId,
+          isGroup: isGroup
+        };
+      }));
 
         setChats(enrichedChats);
       } catch (err) {
@@ -89,7 +92,8 @@ export default function Messages() {
     if (user && targetUserId) {
       const openChatWithUser = async () => {
         try {
-          const response = await fetch('http://localhost:10000/api/conversations', {
+          const BACKEND_URL = (import.meta.env.VITE_API_URL || 'http://localhost:10000').replace(/\/$/, '');
+          const response = await fetch(`${BACKEND_URL}/api/conversations`, {
             method: 'POST',
             headers: { 
               'Content-Type': 'application/json',

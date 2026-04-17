@@ -1,15 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
-import { Send, ArrowLeft, MoreVertical, Image, Smile, Mic } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { Send, ArrowLeft, MoreVertical, Image, Smile, Mic, Heart, Reply, X } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../../context/AuthContext';
 import { io } from 'socket.io-client';
-
-type Message = {
-  id: string;
-  text: string;
-  senderId: string;
-  timestamp: string;
-};
+import { supabase } from '../../utils/supabase';
 
 type Chat = {
   id: string;
@@ -17,6 +11,7 @@ type Chat = {
   avatarColor: string;
   initials: string;
   isOnline: boolean;
+  isGroup?: boolean;
 };
 
 interface ConversationProps {
@@ -24,14 +19,23 @@ interface ConversationProps {
   onBack: () => void;
 }
 
-const socket = io('http://localhost:10000');
+const BACKEND_URL = (import.meta.env.VITE_API_URL || 'http://localhost:10000').replace(/\/$/, '');
+const socket = io(BACKEND_URL);
+
 
 export default function Conversation({ chat, onBack }: ConversationProps) {
   const { user } = useAuth();
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<any[]>([]);
   const [newMessage, setNewMessage] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [showEmojis, setShowEmojis] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [replyingTo, setReplyingTo] = useState<any | null>(null);
+  
   const scrollRef = useRef<HTMLDivElement>(null);
-  // FIXED: Removed the unused isTyping state variable
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
 
   // 1. Fetch History
   useEffect(() => {
@@ -39,7 +43,9 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
 
     const fetchMessages = async () => {
       try {
-        const response = await fetch(`http://localhost:10000/api/messages/${chat.id}`);
+        const response = await fetch(`${BACKEND_URL}/api/messages/${chat.id}`, {
+          headers: { 'x-user-id': user?.id || '' }
+        });
         const data = await response.json();
         setMessages(data);
       } catch (err) {
@@ -48,21 +54,16 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
     };
 
     fetchMessages();
-
-    // Join Socket Room
     socket.emit('join_room', chat.id);
 
-    const handleNewMessage = (msg: Message) => {
+    const handleNewMessage = (msg: any) => {
       if (msg.senderId !== user?.id) {
         setMessages(prev => [...prev, msg]);
       }
     };
 
     socket.on('new_message', handleNewMessage);
-    
-    return () => {
-      socket.off('new_message', handleNewMessage);
-    };
+    return () => { socket.off('new_message', handleNewMessage); };
   }, [chat.id, user?.id]);
 
   // 2. Scroll to Bottom
@@ -73,14 +74,18 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
   }, [messages]);
 
   // 3. Send Message
-  const handleSend = async () => {
-    if (!newMessage.trim() || !user || !chat.id) return;
+  const handleSend = async (text?: string, imageUrl?: string, voiceUrl?: string) => {
+    const content = text || newMessage;
+    if (!content.trim() && !imageUrl && !voiceUrl) return;
+    if (!user || !chat.id) return;
     
-    const text = newMessage;
-    setNewMessage(''); // Clear input
+    const replyId = replyingTo?.id;
+
+    setNewMessage('');
+    setShowEmojis(false);
 
     try {
-      const response = await fetch('http://localhost:10000/api/messages', {
+      const response = await fetch(`${BACKEND_URL}/api/messages`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -88,16 +93,110 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
         },
         body: JSON.stringify({
           conversationId: chat.id,
-          text
+          text: content,
+          imageUrl: imageUrl,
+          voiceUrl: voiceUrl,
+          replyToId: replyId
         })
       });
 
       if (response.ok) {
         const sentMsg = await response.json();
         setMessages(prev => [...prev, sentMsg]);
+        setReplyingTo(null);
       }
     } catch (err) {
       console.error('Error sending message:', err);
+    }
+  };
+
+  // 4. Handle Image Upload
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !user) return;
+
+    setUploading(true);
+    try {
+      const fileName = `${user.id}/${Date.now()}-${file.name}`;
+      const { error } = await supabase.storage
+        .from('message-attachments')
+        .upload(fileName, file);
+
+      if (error) throw error;
+
+      const { data: urlData } = supabase.storage
+        .from('message-attachments')
+        .getPublicUrl(fileName);
+
+      await handleSend('', urlData.publicUrl);
+    } catch (err) {
+      console.error('Upload failed:', err);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  // 5. Voice Recording
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) audioChunksRef.current.push(e.data);
+      };
+
+      mediaRecorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        const fileName = `${user?.id}/voice-${Date.now()}.webm`;
+        
+        setUploading(true);
+        const { error } = await supabase.storage
+          .from('message-attachments')
+          .upload(fileName, audioBlob);
+
+        if (!error) {
+          const { data } = supabase.storage.from('message-attachments').getPublicUrl(fileName);
+          await handleSend('', '', data.publicUrl);
+        }
+        setUploading(false);
+        stream.getTracks().forEach(track => track.stop());
+      };
+
+      mediaRecorder.start();
+      setIsRecording(true);
+    } catch (err) {
+      console.error('Microphone error:', err);
+      alert('Could not access microphone');
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+    }
+  };
+
+  // 6. Toggle Message Like
+  const toggleMessageLike = async (messageId: string) => {
+    if (!user) return;
+    const msg = messages.find(m => m.id === messageId);
+    if (!msg) return;
+
+    const isLiked = msg.isLiked;
+    try {
+      if (isLiked) {
+        await supabase.from('message_likes').delete().match({ message_id: messageId, user_id: user.id });
+      } else {
+        await supabase.from('message_likes').insert({ message_id: messageId, user_id: user.id });
+      }
+      
+      setMessages(prev => prev.map(m => m.id === messageId ? { ...m, isLiked: !isLiked } : m));
+    } catch (err) {
+      console.error('Like failed:', err);
     }
   };
 
@@ -109,6 +208,8 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
       transition={{ duration: 0.3, ease: "easeOut" }}
       className="flex flex-col h-[calc(100vh-140px)] bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden shadow-2xl relative"
     >
+      <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleImageUpload} />
+      
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b border-gray-800 bg-transparent z-10">
         <div className="flex items-center gap-3">
@@ -125,7 +226,7 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
           </div>
           <div>
             <h3 className="font-bold text-white">{chat.sender}</h3>
-            <p className="text-xs text-gray-500 font-medium">{chat.isOnline ? 'Online' : 'Last seen 2h ago'}</p>
+            <p className="text-xs text-gray-500 font-medium">{chat.isOnline ? 'Online' : 'Offline'}</p>
           </div>
         </div>
         <button className="p-2 hover:bg-gray-800 rounded-full transition-colors">
@@ -140,54 +241,130 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
       >
         {messages.map((msg) => {
           const isMe = msg.senderId === user?.id;
+          const quote = Array.isArray(msg.reply_to) ? msg.reply_to[0] : msg.reply_to;
+
           return (
             <motion.div 
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               key={msg.id}
-              className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}
+              className={`flex items-end gap-2 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}
             >
-              <div className={`max-w-[80%] px-4 py-2.5 rounded-2xl shadow-sm ${
+              <div className={`group relative max-w-[80%] px-4 py-2.5 rounded-2xl shadow-sm ${
                 isMe 
                   ? 'bg-brand/95 text-brand-contrast rounded-tr-sm' 
                   : 'bg-gray-800 text-white rounded-tl-sm border border-gray-800/50'
               }`}>
-                <p className="text-sm font-medium leading-relaxed">{msg.text}</p>
-                <p className={`text-[10px] mt-1 font-semibold ${isMe ? 'opacity-60' : 'text-gray-500'}`}>
-                  {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </p>
+                {/* QUOTED REPLY RENDER */}
+                {quote && (
+                  <div className={`mb-2 p-2 rounded-lg border-l-4 text-[11px] min-w-[120px] ${
+                    isMe ? 'bg-black/30 border-brand' : 'bg-black/20 border-gray-500'
+                  }`}>
+                    {/* Name: Show always in Groups, or if it isn't "me" in Private */}
+                    {(chat.isGroup || quote.senderid !== user?.id) && (
+                      <p className={`font-bold mb-0.5 ${isMe ? 'text-brand' : 'text-gray-400'}`}>
+                        {quote.senderid === user?.id ? 'You' : (quote.author?.full_name || chat.sender)}
+                      </p>
+                    )}
+                    {/* Special case: If Private and its "You", show "You" anyway for clarity like Image 1 */}
+                    {!chat.isGroup && quote.senderid === user?.id && (
+                       <p className={`font-bold mb-0.5 text-brand`}>You</p>
+                    )}
+
+                    <div className="flex items-center gap-1 opacity-90 text-white">
+                      {quote.image_url && <Image size={10} className="text-gray-400" />}
+                      {quote.voice_url && <Mic size={10} className="text-gray-400" />}
+                      <span className="line-clamp-2 italic">
+                        {quote.text || (quote.image_url ? '📷 Photo' : quote.voice_url ? '🎤 Voice message' : 'Message')}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {msg.image_url && msg.image_url.startsWith('http') && (
+                  <img src={msg.image_url} alt="Attached" className="rounded-lg mb-2 max-w-full h-auto cursor-pointer hover:opacity-90" onClick={() => window.open(msg.image_url, '_blank')} />
+                )}
+                
+                {msg.voice_url && msg.voice_url.startsWith('http') && (
+                  <div className="mb-2">
+                    <audio src={msg.voice_url} controls className="h-8 max-w-[200px] bg-transparent invert rounded-full" />
+                  </div>
+                )}
+
+                {msg.text && <p className="text-sm font-medium leading-relaxed">{msg.text}</p>}
+                
+                <div className="flex items-center justify-between gap-4 mt-1">
+                  <p className={`text-[10px] font-semibold ${isMe ? 'opacity-60' : 'text-gray-500'}`}>
+                    {new Date(msg.timestamp || msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </p>
+                  
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => setReplyingTo(msg)} className="text-gray-500 opacity-0 group-hover:opacity-100 hover:text-brand transition-all">
+                      <Reply size={12} />
+                    </button>
+                    <button onClick={() => toggleMessageLike(msg.id)} className={`transition-all duration-300 transform active:scale-150 ${msg.isLiked ? 'text-pink-500' : 'text-gray-500 opacity-0 group-hover:opacity-100'}`}>
+                      <Heart size={12} fill={msg.isLiked ? "currentColor" : "none"} />
+                    </button>
+                  </div>
+                </div>
               </div>
             </motion.div>
           );
         })}
       </div>
 
+      {/* REPLY PREVIEW */}
+      <AnimatePresence>
+        {replyingTo && (
+          <motion.div 
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="px-4 py-3 border-t border-gray-800 bg-gray-900/95 flex items-center justify-between gap-4 backdrop-blur-md"
+          >
+            <div className="flex-1 border-l-4 border-brand pl-3 py-1 bg-white/5 rounded-r-lg">
+              <p className="text-[11px] text-brand font-bold mb-0.5">
+                {replyingTo.senderId === user?.id ? 'You' : (replyingTo.author?.full_name || chat.sender)}
+              </p>
+              <div className="flex items-center gap-1 text-[11px] text-gray-400">
+                {replyingTo.image_url && <Image size={10} />}
+                {replyingTo.voice_url && <Mic size={10} />}
+                <p className="line-clamp-1 italic">
+                  {replyingTo.text || (replyingTo.image_url ? 'Photo' : replyingTo.voice_url ? 'Voice message' : 'Message')}
+                </p>
+              </div>
+            </div>
+            <button onClick={() => setReplyingTo(null)} className="p-1.5 hover:bg-gray-800 rounded-full transition-colors">
+              <X size={16} className="text-gray-500" />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Input Area */}
       <div className="p-4 border-t border-gray-800 bg-transparent z-10">
-        <div className="flex items-center gap-2 bg-gray-800 border border-gray-800 rounded-2xl px-4 py-2 shadow-inner focus-within:ring-1 focus-within:ring-brand/50 transition-all">
-          <button className="text-gray-500 hover:text-brand transition-colors">
+        <div className="flex items-center gap-2 bg-gray-800 border border-gray-800 rounded-2xl px-4 py-2 shadow-inner">
+          <button type="button" disabled={uploading} onClick={() => fileInputRef.current?.click()} className={`text-gray-500 hover:text-brand transition-colors ${uploading ? 'animate-pulse' : ''}`}>
             <Image className="w-5 h-5" />
           </button>
-          <button className="text-gray-500 hover:text-brand transition-colors">
-            <Smile className="w-5 h-5" />
+          <button onClick={() => setShowEmojis(!showEmojis)} className={`text-gray-500 hover:text-brand transition-colors ${showEmojis ? 'text-brand' : ''}`}>
+             <Smile className="w-5 h-5" />
           </button>
           <input 
             type="text" 
-            placeholder="iMessage..."
+            placeholder={isRecording ? "Recording voice..." : uploading ? "Uploading..." : "Type a message..."}
             value={newMessage}
+            disabled={uploading || isRecording}
             onChange={(e) => setNewMessage(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleSend()}
             className="flex-1 bg-transparent border-none outline-none text-white text-sm py-2 placeholder-gray-500"
           />
           {newMessage ? (
-            <button 
-              onClick={handleSend}
-              className="p-2 bg-brand rounded-full text-brand-contrast hover:opacity-90 transition-opacity shadow-md"
-            >
+            <button onClick={() => handleSend()} className="p-2 bg-brand rounded-full text-brand-contrast hover:opacity-90 transition-opacity shadow-md">
               <Send className="w-4 h-4 ml-0.5" />
             </button>
           ) : (
-            <button className="text-gray-500 hover:text-brand transition-colors">
+            <button onClick={isRecording ? stopRecording : startRecording} className={`p-2 rounded-full transition-all duration-300 ${isRecording ? 'bg-red-500 text-white animate-pulse' : 'text-gray-500 hover:text-brand'}`}>
               <Mic className="w-5 h-5" />
             </button>
           )}

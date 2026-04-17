@@ -208,7 +208,7 @@ export function Profile() {
       // Upload image to Supabase Storage if a new file was selected
       if (avatarFile) {
         const fileExt = avatarFile.name.split(".").pop();
-        const fileName = `${currentUser.id}-${Date.now()}.${fileExt}`;
+        const fileName = `${currentUser.id}/${Date.now()}.${fileExt}`;
 
         // Upload to 'avatars' bucket
         const { error: uploadError } = await supabase.storage
@@ -566,7 +566,6 @@ export function Profile() {
                 onLike={() => {}}
                 onComment={() => {}}
                 onRepost={() => {}}
-                onShare={() => {}}
                 activeDropdownId={activeDropdownId} // <-- ADD THIS
                 setActiveDropdownId={setActiveDropdownId} // <-- ADD THIS
               />
