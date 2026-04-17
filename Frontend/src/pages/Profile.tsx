@@ -283,9 +283,7 @@ export function Profile() {
         </button>
         <div>
           {/* Fixed: Changed text color to text-black for light mode */}
-          <h2 className="text-xl font-bold text-white">
-            {profile?.full_name}
-          </h2>
+          <h2 className="text-xl font-bold text-white">{profile?.full_name}</h2>
           <p className="text-xs text-gray-600 dark:text-gray-400">
             {posts.length} Posts
           </p>
@@ -467,10 +465,11 @@ export function Profile() {
             </motion.div>
           ) : (
             <>
-              
-               <h1 className="text-2xl font-bold text-white leading-tight">{profile?.full_name}</h1>
+              <h1 className="text-2xl font-bold text-white leading-tight">
+                {profile?.full_name}
+              </h1>
               <p className="text-gray-500">@{profile?.username}</p>
-              
+
               <p className="mt-3 text-[15px] text-gray-200">{profile?.bio}</p>
 
               <div className="flex flex-wrap gap-4 mt-3 text-gray-600 dark:text-gray-400 text-sm">
@@ -533,14 +532,14 @@ export function Profile() {
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
-            className="flex-1 min-w-[80px] py-4 text-sm relative transition-colors hover:bg-black/5 dark:hover:bg-white/5 uppercase"
+            className="flex-1 min-w-[80px] py-4 text-sm font-bold relative transition-colors hover:bg-black/5 dark:hover:bg-white/5 uppercase"
           >
             {/* Fixed: Active tab is pure black, inactive is gray. Dark mode stays white/gray */}
             <span
               className={
                 activeTab === tab
-                  ? "text-black dark:text-gray-500 font-bold"
-                  : "text-gray-500 dark:text-gray-400 font-medium"
+                  ? "text-gray-900 text-white"
+                  : "text-gray-500"
               }
             >
               {tab}
