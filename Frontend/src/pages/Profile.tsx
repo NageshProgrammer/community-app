@@ -44,7 +44,15 @@ export function Profile() {
   const [website, setWebsite] = useState("");
   const [avatarUrl, setAvatarUrl] = useState("");
 
-  // State to hold the actual file before uploading
+  // State for image viewer
+  const [showAvatarModal, setShowAvatarModal] = useState(false);
+
+  // States for Follow Lists
+  const [followModalOpen, setFollowModalOpen] = useState(false);
+  const [followModalType, setFollowModalType] = useState<'followers' | 'following'>('followers');
+  const [followList, setFollowList] = useState<any[]>([]);
+  const [loadingFollows, setLoadingFollows] = useState(false);
+
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -265,6 +273,47 @@ export function Profile() {
     setFollowingLoading(false);
   };
 
+  const openFollowModal = async (type: 'followers' | 'following') => {
+    if (!targetUserId) return;
+    setFollowModalType(type);
+    setFollowModalOpen(true);
+    setLoadingFollows(true);
+    setFollowList([]);
+
+    try {
+      // Query for followers or following
+      const isFollowers = type === 'followers';
+      const { data, error } = await supabase
+        .from('follows')
+        .select(`
+          follower_id,
+          following_user_id,
+          user:profiles!${isFollowers ? 'follower_id' : 'following_user_id'} (
+            id,
+            username,
+            full_name,
+            avatar_url,
+            bio
+          )
+        `)
+        .eq(isFollowers ? 'following_user_id' : 'follower_id', targetUserId);
+
+      if (error) throw error;
+      
+      if (data) {
+        // Map the joined data to get the profiles
+        const profiles = data
+          .map((item: any) => item.user)
+          .filter(u => u !== null); // Filter out any null joins
+        setFollowList(profiles);
+      }
+    } catch (err) {
+      console.error(`Error fetching ${type}:`, err);
+    } finally {
+      setLoadingFollows(false);
+    }
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0, x: -20 }}
@@ -295,7 +344,10 @@ export function Profile() {
       {/* Banner Area */}
       <div className="relative h-32 sm:h-48 bg-gradient-to-r from-brand to-blue-900">
         {/* AVATAR WRAPPER */}
-        <div className="absolute -bottom-16 left-4 w-32 h-32 bg-white dark:bg-dark rounded-full border-4 border-white dark:border-dark overflow-hidden z-20 group shadow-lg">
+        <div 
+          onClick={() => !isEditing && setShowAvatarModal(true)}
+          className={`absolute -bottom-16 left-4 w-32 h-32 bg-white dark:bg-dark rounded-full border-4 border-white dark:border-dark overflow-hidden z-20 group shadow-lg ${!isEditing ? 'cursor-zoom-in hover:scale-[1.02] transition-transform' : ''}`}
+        >
           <img
             src={
               isEditing
@@ -509,18 +561,22 @@ export function Profile() {
               </div>
 
               <div className="flex gap-4 mt-4 text-sm">
-                <p>
-                  {/* Fixed: Changed count number to text-black for light mode */}
-                  <span className="text-black dark:text-white font-bold">
+                <button 
+                  onClick={() => openFollowModal('following')}
+                  className="hover:underline transition-all flex gap-1 items-center group"
+                >
+                  <span className="text-black dark:text-white font-bold group-hover:text-brand">
                     {isOwnProfile ? followingIds.length : followingCount}
                   </span>{" "}
                   <span className="text-gray-600 dark:text-gray-400">
                     Following
                   </span>
-                </p>
-                <p>
-                  {/* Fixed: Changed count number to text-black for light mode */}
-                  <span className="text-black dark:text-white font-bold">
+                </button>
+                <button 
+                  onClick={() => openFollowModal('followers')}
+                  className="hover:underline transition-all flex gap-1 items-center group"
+                >
+                  <span className="text-black dark:text-white font-bold group-hover:text-brand">
                     {targetUserId && followerCounts[targetUserId] !== undefined
                       ? followerCounts[targetUserId]
                       : followerCount}
@@ -528,7 +584,7 @@ export function Profile() {
                   <span className="text-gray-600 dark:text-gray-400">
                     Followers
                   </span>
-                </p>
+                </button>
               </div>
             </>
           )}
@@ -595,6 +651,120 @@ export function Profile() {
           <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-brand"></div>
         </div>
       )}
+
+      {/* Profile Image Viewer Modal */}
+      <AnimatePresence>
+        {showAvatarModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setShowAvatarModal(false)}
+            className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-xl flex items-center justify-center p-4 cursor-zoom-out"
+          >
+            <motion.button
+              initial={{ opacity: 0, scale: 0.5 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="absolute top-6 right-6 p-3 bg-white/10 hover:bg-white/20 rounded-full text-white transition-colors border border-white/10"
+              onClick={() => setShowAvatarModal(false)}
+            >
+              <X size={24} />
+            </motion.button>
+            
+            <motion.img
+              initial={{ scale: 0.8, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.8, opacity: 0, y: 20 }}
+              transition={{ type: "spring", damping: 25, stiffness: 300 }}
+              src={profile?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${profile?.id || "user"}`}
+              alt={profile?.full_name}
+              className="max-w-full max-h-[85vh] rounded-2xl shadow-2xl object-contain border border-white/10"
+              onClick={(e) => e.stopPropagation()}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Follows List Modal */}
+      <AnimatePresence>
+        {followModalOpen && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setFollowModalOpen(false)}
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            />
+            
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-md bg-white dark:bg-gray-900 rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[80vh] border border-gray-200 dark:border-gray-800"
+            >
+              <div className="p-4 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between">
+                <h3 className="text-xl font-bold text-black dark:text-white capitalize">
+                  {followModalType}
+                </h3>
+                <button 
+                  onClick={() => setFollowModalOpen(false)}
+                  className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors text-gray-500"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-2">
+                {loadingFollows ? (
+                  <div className="flex flex-col items-center justify-center py-12 gap-3">
+                    <div className="w-8 h-8 border-2 border-brand border-t-transparent rounded-full animate-spin" />
+                    <p className="text-gray-500 text-sm">Loading list...</p>
+                  </div>
+                ) : followList.length > 0 ? (
+                  <div className="space-y-1">
+                    {followList.map((user) => (
+                      <button
+                        key={user.id}
+                        onClick={() => {
+                          setFollowModalOpen(false);
+                          navigate(`/profile/${user.id}`);
+                        }}
+                        className="w-full flex items-center gap-3 p-3 hover:bg-gray-50 dark:hover:bg-gray-800/50 rounded-2xl transition-all group"
+                      >
+                        <img 
+                          src={user.avatar_url} 
+                          className="w-12 h-12 rounded-full object-cover border border-gray-100 dark:border-gray-800 group-hover:scale-105 transition-transform" 
+                          alt={user.full_name} 
+                        />
+                        <div className="flex-1 text-left">
+                          <p className="font-bold text-black dark:text-white group-hover:text-brand transition-colors">
+                            {user.full_name}
+                          </p>
+                          <p className="text-gray-500 text-sm">@{user.username}</p>
+                        </div>
+                        <div className="px-4 py-1.5 rounded-full bg-brand/10 text-brand text-xs font-bold opacity-0 group-hover:opacity-100 transition-opacity">
+                          View Profile
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-16 text-center px-6">
+                    <div className="w-16 h-16 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mb-4">
+                      <Calendar className="text-gray-400" />
+                    </div>
+                    <p className="text-black dark:text-white font-bold">No {followModalType} yet</p>
+                    <p className="text-gray-500 text-sm mt-1">
+                      When people {followModalType === 'followers' ? 'follow this account' : 'are followed by this account'}, they'll show up here.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }
