@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
-import { Send, ArrowLeft, MoreVertical, Image, Smile, Mic, Heart, Reply, X, UserMinus, ShieldCheck, LogOut, Info, Plus, Search, Camera } from 'lucide-react';
+import { Send, ArrowLeft, MoreVertical, Image, Smile, Mic, Heart, Reply, X, UserMinus, ShieldCheck, LogOut, Plus, Search, Camera } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../../context/AuthContext';
 import { io } from 'socket.io-client';
@@ -151,7 +151,7 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
         .eq('follower_id', user.id);
 
       if (error) throw error;
-      const profiles = data.map(d => d.user).filter(p => p !== null && !groupParticipants.find(gp => gp.id === p.id));
+      const profiles = (data as any[]).map(d => d.user).filter(p => p !== null && !groupParticipants.find((gp: any) => gp.id === p.id));
       setFollowingList(profiles);
     } catch (err) {
       console.error('Error fetching followers:', err);

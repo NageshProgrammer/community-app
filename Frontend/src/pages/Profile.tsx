@@ -9,7 +9,8 @@ import {
   Camera,
   X,
 } from "lucide-react";
-import { Post, type PostData } from "../components/feed/Post";
+import { Post } from "../components/feed/Post";
+import { type PostData } from "../context/PostContext";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "../utils/supabase";
 import { useParams, useNavigate } from "react-router-dom";
@@ -142,7 +143,7 @@ export function Profile() {
         setFollowerCount(fetchedFollowers || 0);
         setFollowingCount(fetchedFollowing || 0);
 
-        const { data: postsData, error: postsError } = await supabase
+        const { data: postsData, error: _postsError } = await supabase
           .from("posts")
           .select(
             `
