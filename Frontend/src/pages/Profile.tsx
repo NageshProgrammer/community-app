@@ -242,7 +242,7 @@ export function Profile() {
     };
 
     loadProfile();
-  }, [targetUserId, isOwnProfile, currentUser, followerCounts]);
+  }, [targetUserId, isOwnProfile, currentUser?.id]);
 
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
