@@ -49,14 +49,14 @@ export function SocialProvider({ children }: { children: ReactNode }) {
     if (!user || !targetId || user.id === targetId) return;
 
     const isFollowing = followingIds.includes(targetId);
-    
+
     // Save original state for rollback
     const originalFollowing = [...followingIds];
     const originalCounts = { ...followerCounts };
 
     // 1. OPTIMISTIC UPDATE (Instant UI change)
-    setFollowingIds(prev => isFollowing 
-      ? prev.filter(id => id !== targetId) 
+    setFollowingIds(prev => isFollowing
+      ? prev.filter(id => id !== targetId)
       : [...prev, targetId]
     );
     setFollowerCounts(prev => ({
@@ -71,14 +71,14 @@ export function SocialProvider({ children }: { children: ReactNode }) {
           .from('follows')
           .delete()
           .match({ follower_id: user.id, following_user_id: targetId });
-        
+
         if (error) throw error;
       } else {
         // Follow request to Supabase
         const { error } = await supabase
           .from('follows')
           .insert({ follower_id: user.id, following_user_id: targetId });
-        
+
         if (error) throw error;
 
         // Optional: Create Notification in Supabase

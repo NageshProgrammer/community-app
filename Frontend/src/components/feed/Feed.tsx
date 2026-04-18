@@ -10,7 +10,7 @@ import { SearchX, ArrowLeft } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom'; 
 
 export function Feed() {
-  const { posts, addPost, toggleLike, toggleRepost, addComment, deletePost, editPost } = usePosts();
+  const { posts, addPost, toggleLike, addComment, deletePost, loading, editPost } = usePosts();
   const { user } = useAuth();
   const { searchQuery, setSearchQuery } = useSocial();
   
@@ -37,6 +37,14 @@ export function Feed() {
     newParams.delete('shared');
     setSearchParams(newParams);
   };
+
+  if (loading && posts.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-3xl mx-auto rounded-2xl border border-gray-800 bg-gray-900 overflow-hidden shadow-xl px-3">
@@ -112,7 +120,6 @@ export function Feed() {
                 post={post}
                 index={index}
                 onLike={() => toggleLike(post.id)}
-                onRepost={() => toggleRepost(post.id)}
                 onComment={(comment) => addComment(post.id, comment)}
                 onDelete={() => deletePost(post.id)}
                 onEdit={async (newContent) => await editPost(post.id, newContent)}

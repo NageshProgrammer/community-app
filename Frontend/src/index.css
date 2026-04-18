@@ -2,7 +2,7 @@
 
 @import "tailwindcss";
 
-@theme {
+:root {
   /* Dark Mode Defaults (Monochrome) */
   --color-brand: #ffffff;
   --color-brand-contrast: #000000;
@@ -104,6 +104,38 @@ body::before {
   backdrop-filter: blur(12px) saturate(180%) !important;
   -webkit-backdrop-filter: blur(12px) saturate(180%) !important;
   border: 1px solid rgba(255, 255, 255, 0.04) !important;
+}
+
+/* Premium Messaging Utilities */
+.message-bubble-current {
+  background: linear-gradient(135deg, #1d9bf0 0%, #0076c5 100%);
+  border-radius: 20px 20px 4px 20px;
+  box-shadow: 0 4px 12px rgba(29, 155, 240, 0.2);
+}
+
+.message-bubble-other {
+  background: var(--card-bg);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 20px 20px 20px 4px;
+}
+
+.chat-active-gradient {
+  background: linear-gradient(90deg, rgba(29, 155, 240, 0.1) 0%, transparent 100%);
+  border-left: 3px solid #1d9bf0;
+}
+
+.glass-search {
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.glass-search:focus {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: #1d9bf0;
+  box-shadow: 0 0 20px rgba(29, 155, 240, 0.15);
 }
 
 .border-gray-800 {

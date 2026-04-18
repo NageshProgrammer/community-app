@@ -71,8 +71,9 @@ export function Sidebar({ onOpenPostModal }: SidebarProps) {
 
     fetchBadgeCounts();
 
-    const interval = setInterval(fetchBadgeCounts, 60000);
-    return () => clearInterval(interval);
+    // DISABLED POLLING COMPLETELY TO SAVE FREE TIER LIMITS
+    // const interval = setInterval(fetchBadgeCounts, 300000); 
+    // return () => clearInterval(interval);
 
   }, [user?.id]);
 

@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { 
   Search, 
   Edit, 
@@ -12,6 +12,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import Conversation from '../components/shared/Conversation';
 import { useSocial } from '../context/SocialContext';
 import { useAuth } from '../context/AuthContext';
+import { useData } from '../context/DataContext';
 import { supabase } from '../utils/supabase';
 
 type Chat = {
@@ -50,104 +51,147 @@ export default function Messages() {
 
   const activeSearch = searchQuery || localSearch;
 
-  // Sync Conversations from Backend
+  const { initialData } = useData();
+
+  // Sync Conversations from Bootstrap or Backend
   useEffect(() => {
     if (!user) return;
 
-    const fetchConversations = async () => {
-      setLoading(true);
-      try {
-        const BACKEND_URL = (import.meta.env.VITE_API_URL || 'http://localhost:10000').replace(/\/$/, '');
-        const response = await fetch(`${BACKEND_URL}/api/conversations`, {
-          headers: { 'x-user-id': user.id }
-        });
-        if (!response.ok) throw new Error('Failed to fetch');
-        
-        const data = await response.json();
-        
-      // Enrich conversations with profile data from Supabase
-      const enrichedChats = await Promise.all(data.map(async (convo: any) => {
-        const isGroup = convo.participants.length > 2 || convo.isGroup; // Fallback to isGroup flag if exists
-        const targetId = convo.participants.find((p: string) => p !== user.id);
-        const { data: profile } = await supabase.from('profiles').select('full_name, username').eq('id', targetId).single();
+    if (initialData?.conversations) {
+      const enrichedChats = (initialData.conversations || []).map((convo: any) => {
+        const isGroup = convo.is_group; 
+        const profile = convo.profile;
+        const targetId = convo.participants?.find((p: string) => p !== user?.id);
         
         return {
           id: convo.id,
           sender: isGroup ? (convo.name || "Group") : (profile?.full_name || profile?.username || 'User'),
           avatarColor: 'bg-brand',
           initials: (isGroup ? (convo.name || "G") : (profile?.full_name || 'U')).substring(0, 1).toUpperCase(),
-          lastMessage: convo.lastMessage || 'No messages yet',
-          timestamp: new Date(convo.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          unreadCount: 0,
+          lastMessage: convo.lastmessage || convo.lastMessage || 'No messages yet',
+          timestamp: new Date(convo.updatedAt || convo.updatedat).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          unreadCount: convo.unreadCount || 0,
           isOnline: true,
           targetUserId: targetId,
           isGroup: isGroup
         };
-      }));
+      });
+      setChats(enrichedChats);
+      setLoading(false);
+      return;
+    }
+
+    const fetchConversations = async () => {
+      setLoading(true);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 6000); // 6s timeout rescue
+
+      try {
+        const BACKEND_URL = (import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || 'http://localhost:10000').replace(/\/$/, '');
+        const response = await fetch(`${BACKEND_URL}/api/conversations`, {
+          headers: { 'x-user-id': user.id },
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        
+        if (!response.ok) throw new Error('Failed to fetch');
+        
+        const data = await response.json();
+        
+        const enrichedChats = (data || []).map((convo: any) => {
+          const isGroup = convo.is_group; 
+          const profile = convo.profile;
+          const targetId = convo.participants.find((p: string) => p !== user.id);
+          
+          return {
+            id: convo.id,
+            sender: isGroup ? (convo.name || "Group") : (profile?.full_name || profile?.username || 'User'),
+            avatarColor: 'bg-brand',
+            initials: (isGroup ? (convo.name || "G") : (profile?.full_name || 'U')).substring(0, 1).toUpperCase(),
+            lastMessage: convo.lastMessage || 'No messages yet',
+            timestamp: new Date(convo.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            unreadCount: convo.unreadCount || 0,
+            isOnline: true,
+            targetUserId: targetId,
+            isGroup: isGroup
+          };
+        });
 
         setChats(enrichedChats);
       } catch (err) {
         console.error('Error fetching conversations:', err);
+        // Fallback: If network is dead, at least stop loading
+        if (chats.length === 0) setChats([]); 
       } finally {
         setLoading(false);
       }
     };
 
     fetchConversations();
-  }, [user]);
+  }, [user, initialData]);
+
+  const initializingChat = useRef(false);
 
   // Handle opening a chat from a URL param (?user_id=...)
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const targetUserId = params.get('user_id');
 
-    // Only fetch if we have a target user AND we aren't already looking at that chat
-    if (user && targetUserId && selectedChatId === null) {
+    if (user && targetUserId && selectedChatId === null && !initializingChat.current) {
+      // 1. OPTIMIZATION: Check if this chat exists in memory first
+      const existingChat = chats.find(c => c.targetUserId === targetUserId);
+      if (existingChat) {
+        setSelectedChatId(existingChat.id);
+        return;
+      }
+
       const openChatWithUser = async () => {
+        initializingChat.current = true;
         try {
-          const BACKEND_URL = (import.meta.env.VITE_API_URL || 'http://localhost:10000').replace(/\/$/, '');
-          const response = await fetch(`${BACKEND_URL}/api/conversations/with/${targetUserId}`, {
+          const URL = (import.meta.env.VITE_BACKEND_URL || 'http://localhost:10000').replace(/\/$/, '');
+          const response = await fetch(`${URL}/api/conversations/with/${targetUserId}`, {
             method: 'GET',
             headers: { 'x-user-id': user.id }
           });
           
           let data;
           if (response.status === 404) {
-             const createRes = await fetch(`${BACKEND_URL}/api/conversations`, {
+             const createRes = await fetch(`${URL}/api/conversations`, {
                method: 'POST',
                headers: { 'Content-Type': 'application/json', 'x-user-id': user.id },
                body: JSON.stringify({ targetUserId })
              });
              data = await createRes.json();
+             
+             if (!createRes.ok) {
+               alert(data.details || 'Database blocked chat. Please run the SQL migration.');
+               return;
+             }
           } else {
              data = await response.json();
           }
 
           if (data?.id) {
             setSelectedChatId(data.id);
-            
-            // Add to chats list if not already there
-            if (!chats.find(c => c.id === data.id)) {
-              const otherParticipantId = data.participants.find((p: string) => p !== user.id);
-              if (otherParticipantId) {
-                const { data: profile } = await supabase.from('profiles').select('full_name, username, avatar_url').eq('id', otherParticipantId).single();
-                const newChat = {
-                  id: data.id,
-                  sender: profile?.full_name || 'User',
-                  avatarColor: 'bg-brand',
-                  initials: (profile?.full_name || 'U')[0].toUpperCase(),
-                  lastMessage: 'New conversation',
-                  timestamp: 'Now',
-                  unreadCount: 0,
-                  isOnline: true,
-                  targetUserId: otherParticipantId
-                };
-                setChats(prev => [newChat, ...prev]);
-              }
-            }
+            setChats(prev => {
+              if (prev.find(c => c.id === data.id)) return prev;
+              return [{
+                id: data.id,
+                sender: 'New Chat',
+                avatarColor: 'bg-brand',
+                initials: 'N',
+                lastMessage: 'Starting...',
+                timestamp: 'Now',
+                unreadCount: 0,
+                isOnline: true,
+                targetUserId: targetUserId
+              }, ...prev];
+            });
           }
         } catch (err) {
           console.error('Error starting conversation:', err);
+        } finally {
+          initializingChat.current = false;
         }
       };
 

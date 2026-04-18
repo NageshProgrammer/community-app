@@ -31,7 +31,7 @@ function AppContent() {
   const location = useLocation();
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isPostModalOpen, setIsPostModalOpen] = useState(false);
-  
+
   // Destructure loading from useAuth to prevent the race condition
   const { user, loading } = useAuth();
 
@@ -77,7 +77,7 @@ function AppContent() {
         <PostModal isOpen={isPostModalOpen} onClose={() => setIsPostModalOpen(false)} />
 
         <main className="flex-1 border-r border-gray-800 min-h-screen pb-20 sm:pb-0 overflow-x-hidden">
-          
+
 
           <AnimatePresence mode="wait">
             <Routes location={location} key={location.pathname}>
@@ -99,16 +99,20 @@ function AppContent() {
   );
 }
 
+import { DataProvider } from './context/DataContext';
+
 function App() {
   return (
     <AuthProvider>
-      <ThemeProvider>
-        <SocialProvider>
-          <PostProvider>
-            <AppContent />
-          </PostProvider>
-        </SocialProvider>
-      </ThemeProvider>
+      <DataProvider>
+        <ThemeProvider>
+          <SocialProvider>
+            <PostProvider>
+              <AppContent />
+            </PostProvider>
+          </SocialProvider>
+        </ThemeProvider>
+      </DataProvider>
     </AuthProvider>
   );
 }

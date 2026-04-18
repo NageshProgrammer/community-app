@@ -26,6 +26,88 @@ app.use(express.json());
 // ===== MIDDLEWARE =====
 const getUserId = (req: express.Request) => req.headers['x-user-id'] as string;
 
+// Simple In-Memory Cache (30-second TTL)
+const bootstrapCache = new Map<string, { data: any, timestamp: number }>();
+const CACHE_TTL = 30000; // 30 seconds
+
+// ===== BOOTSTRAP API (The "Ultimate Reduction" Fix) =====
+app.get('/api/bootstrap', async (req, res) => {
+  const userId = getUserId(req);
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+  // 1. Check Cache first
+  const cached = bootstrapCache.get(userId);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    return res.json(cached.data);
+  }
+
+  try {
+    // Parallelize all heavy lifting
+    const [profileRes, convRes, notifRes, postsRes] = await Promise.all([
+      supabase.from('profiles').select('*').eq('id', userId).maybeSingle(),
+      supabase.from('conversations').select('*').contains('participants', [userId]).limit(10),
+      supabase.from('notifications').select('*').eq('user_id', userId).order('created_at', { ascending: false }).limit(10),
+      supabase.from('posts').select(`
+        *,
+        author:profiles(*),
+        likesCount:post_likes(count),
+        repostsCount:post_reposts(count),
+        commentsCount:post_comments(count)
+      `).order('created_at', { ascending: false }).limit(20)
+    ]);
+
+    // 1. Enrich Conversations
+    const conversations = await Promise.all((convRes.data || []).map(async (convo: any) => {
+      const [countRes, otherProfile] = await Promise.all([
+        supabase.from('messages').select('id', { count: 'exact', head: true }).eq('conversationid', convo.id).eq('isread', false).neq('senderid', userId),
+        !convo.is_group ? supabase.from('profiles').select('*').eq('id', convo.participants.find((p: string) => p !== userId)).maybeSingle() : Promise.resolve({ data: null })
+      ]);
+      return {
+        ...convo,
+        unreadCount: countRes.count || 0,
+        profile: otherProfile.data,
+        updatedAt: convo.updatedat || convo.updated_at,
+        lastMessage: convo.lastmessage || convo.last_message
+      };
+    }));
+
+    // 2. Enrich Posts (Merge counts into flattened numbers)
+    const postIds = (postsRes.data || []).map((p: any) => p.id);
+    const [likesRes, repostsRes] = await Promise.all([
+      userId ? supabase.from('post_likes').select('post_id').in('post_id', postIds).eq('user_id', userId) : Promise.resolve({ data: [] }),
+      userId ? supabase.from('post_reposts').select('post_id').in('post_id', postIds).eq('user_id', userId) : Promise.resolve({ data: [] })
+    ]);
+
+    const likedIds = new Set(likesRes.data?.map((l: any) => l.post_id));
+    const repostedIds = new Set(repostsRes.data?.map((r: any) => r.post_id));
+
+    const posts = (postsRes.data || []).map((post: any) => ({
+      ...post,
+      likesCount: post.likesCount?.[0]?.count || 0,
+      repostsCount: post.repostsCount?.[0]?.count || 0,
+      commentsCount: post.commentsCount?.[0]?.count || 0,
+      isLiked: likedIds.has(post.id),
+      isReposted: repostedIds.has(post.id),
+      timestamp: post.created_at
+    }));
+
+    const finalData = {
+      profile: profileRes.data,
+      conversations,
+      notifications: notifRes.data || [],
+      posts
+    };
+
+    // 2. Store in Cache
+    bootstrapCache.set(userId, { data: finalData, timestamp: Date.now() });
+
+    res.json(finalData);
+  } catch (err) {
+    console.error('Bootstrap Critical Failure:', err);
+    res.status(500).json({ error: 'Bootstrap failed' });
+  }
+});
+
 // ===== NOTIFICATIONS API =====
 app.get('/api/notifications', async (req, res) => {
   const userId = getUserId(req);
@@ -36,13 +118,16 @@ app.get('/api/notifications', async (req, res) => {
       .from('notifications')
       .select('*')
       .eq('user_id', userId)
-      .order('created_at', { ascending: false });
+      .limit(50);
 
-    if (error) throw error;
+    // If 'message' doesn't exist, we fallback to an empty result rather than erroring out
+    if (error) {
+      console.warn('Notifications fetch warning:', error.message);
+      return res.json([]);
+    }
     res.json(data || []);
   } catch (err) {
-    console.error('Error fetching notifications:', err);
-    res.status(500).json({ error: 'Failed' });
+    res.json([]);
   }
 });
 
@@ -56,31 +141,45 @@ app.get('/api/conversations', async (req, res) => {
     const { data: convos, error } = await supabase
       .from('conversations')
       .select('*')
-      .contains('participants', [userId])
-      .order('updatedat', { ascending: false });
+      .contains('participants', [userId]);
 
-    if (error) throw error;
+    if (error) {
+      console.warn('Conversations fetch warning:', error.message);
+      return res.json([]);
+    }
 
     const enrichedConvos = await Promise.all((convos || []).map(async (convo) => {
-      const { count } = await supabase
-        .from('messages')
-        .select('*', { count: 'exact', head: true })
-        .eq('conversationid', convo.id)
-        .eq('isread', false)
-        .neq('senderid', userId);
+      try {
+        const [countResult, profileResult] = await Promise.all([
+          supabase
+            .from('messages')
+            .select('id', { count: 'exact', head: true })
+            .eq('conversationid', convo.id)
+            .eq('isread', false)
+            .neq('senderid', userId),
 
-      return {
-        ...convo,
-        unreadCount: count || 0,
-        updatedAt: convo.updatedat,
-        lastMessage: convo.lastmessage
-      };
+          !convo.is_group ? supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', convo.participants?.find((p: string) => p !== userId) || '')
+            .single() : Promise.resolve({ data: null })
+        ]);
+
+        return {
+          ...convo,
+          unreadCount: countResult.count || 0,
+          profile: profileResult.data,
+          updatedAt: convo.updatedat || convo.updated_at,
+          lastMessage: convo.lastmessage || convo.last_message
+        };
+      } catch (e) {
+        return { ...convo, unreadCount: 0, profile: null };
+      }
     }));
 
     res.json(enrichedConvos);
   } catch (err) {
-    console.error('Error fetching conversations:', err);
-    res.status(500).json({ error: 'Internal Server Error' });
+    res.json([]);
   }
 });
 
@@ -122,6 +221,7 @@ app.post('/api/conversations', async (req, res) => {
   try {
     // 1. If it's a single DM
     if (targetUserId && !participants) {
+      // Find existing
       const { data: existing, error: findError } = await supabase
         .from('conversations')
         .select('*')
@@ -130,51 +230,60 @@ app.post('/api/conversations', async (req, res) => {
         .contains('participants', [targetUserId])
         .maybeSingle();
 
-      if (findError) console.error('Database find error:', findError);
-
       if (existing) {
         return res.json({
-          ...existing, 
+          ...existing,
           unreadCount: 0,
-          updatedAt: existing.updatedat,
-          lastMessage: existing.lastmessage
+          updatedAt: existing.updatedat || existing.updated_at,
+          lastMessage: existing.lastmessage || existing.last_message
         });
       }
 
+      const insertData: any = {
+        participants: [currentUserId, targetUserId],
+        is_group: false
+      };
+
+      // Handle naming variants for timestamps
+      const timestamp = new Date().toISOString();
+      insertData.updatedat = timestamp; 
+      // Try updated_at too just in case
+      insertData.updated_at = timestamp;
+
       const { data: newConvo, error: insError } = await supabase
         .from('conversations')
-        .insert({
-          participants: [currentUserId, targetUserId],
-          updatedat: new Date().toISOString(),
-          is_group: false
-        })
+        .insert(insertData)
         .select()
         .single();
 
       if (insError) {
-        console.error('DATABASE INSERT ERROR (DM):', insError);
-        throw insError;
+        console.error('DATABASE INSERT ERROR (DM):', insError.message);
+        // Better error response for the UI to show
+        return res.status(500).json({ 
+          error: 'Security Policy Violation', 
+          details: 'Please ensure you have run the latest SQL migration in Supabase to allow chat creation.',
+          code: insError.code 
+        });
       }
 
       return res.json({
-        ...newConvo, 
+        ...newConvo,
         unreadCount: 0,
         updatedAt: newConvo.updatedat,
-        lastMessage: newConvo.lastmessage
+        lastMessage: 'New Chat'
       });
     }
 
     // 2. If it's a Group creation
     if (participants && Array.isArray(participants)) {
       const allParticipants = Array.from(new Set([currentUserId, ...participants]));
-      
+
       const { data: newGroup, error: groupError } = await supabase
         .from('conversations')
         .insert({
           participants: allParticipants,
           name: name || 'New Group',
           is_group: true,
-          admins: [currentUserId],
           updatedat: new Date().toISOString()
         })
         .select()
@@ -225,10 +334,15 @@ app.get('/api/conversations/:id/participants', async (req, res) => {
 
     if (profilesError) throw profilesError;
 
-    const participantsWithAdmin = (profiles || []).map(p => ({
-      ...p,
-      isAdmin: Array.isArray(convo.admins) ? convo.admins.includes(p.id) : (participantIds[0] === p.id) 
-    }));
+    const adminIds = Array.isArray(convo.admins) ? convo.admins : (Array.isArray(convo.admin_ids) ? convo.admin_ids : []);
+    
+    const participantsWithAdmin = (profiles || []).map(p => {
+      let isAdmin = adminIds.includes(p.id);
+      // Fallback: If no admins are set yet, the first participant is the de-facto admin
+      if (adminIds.length === 0 && participantIds[0] === p.id) isAdmin = true;
+      
+      return { ...p, isAdmin };
+    });
 
     res.json(participantsWithAdmin);
   } catch (err: any) {
@@ -254,26 +368,28 @@ app.post('/api/conversations/:id/action', async (req, res) => {
     if (!convo) return res.status(404).json({ error: 'Conversation not found' });
 
     const participantIds = Array.isArray(convo.participants) ? convo.participants : [];
-    const isAdmin = Array.isArray(convo.admins) ? convo.admins.includes(currentUserId) : (participantIds[0] === currentUserId);
+    const adminIds = Array.isArray(convo.admins) ? convo.admins : (Array.isArray(convo.admin_ids) ? convo.admin_ids : []);
     
+    const isAdmin = adminIds.includes(currentUserId) || (adminIds.length === 0 && participantIds[0] === currentUserId);
+
     let updatedParticipants = [...participantIds];
-    let updatedAdmins = Array.isArray(convo.admins) ? [...convo.admins] : (participantIds[0] ? [participantIds[0]] : []);
+    let updatedAdmins = [...adminIds];
 
     if (action === 'update-avatar') {
-       if (!isAdmin) return res.status(403).json({ error: 'Only admins can update group avatar' });
-       const { avatarUrl } = req.body;
-       if (!avatarUrl) return res.status(400).json({ error: 'Missing avatarUrl' });
+      if (!isAdmin) return res.status(403).json({ error: 'Only admins can update group avatar' });
+      const { avatarUrl } = req.body;
+      if (!avatarUrl) return res.status(400).json({ error: 'Missing avatarUrl' });
 
-       const { error: updateError } = await supabase
-         .from('conversations')
-         .update({ 
-           avatar_url: avatarUrl,
-           updatedat: new Date().toISOString()
-         })
-         .eq('id', id);
+      const { error: updateError } = await supabase
+        .from('conversations')
+        .update({
+          avatar_url: avatarUrl,
+          updatedat: new Date().toISOString()
+        })
+        .eq('id', id);
 
-       if (updateError) throw updateError;
-       return res.json({ success: true, avatarUrl });
+      if (updateError) throw updateError;
+      return res.json({ success: true, avatarUrl });
     }
 
     if (action === 'exit') {
@@ -298,11 +414,15 @@ app.post('/api/conversations/:id/action', async (req, res) => {
       return res.status(400).json({ error: 'Invalid action' });
     }
 
-    // Build update object dynamically to avoid errors if columns are missing
-    const updateData: any = { participants: updatedParticipants };
-    if (convo.hasOwnProperty('admins')) {
-      updateData.admins = updatedAdmins;
-    }
+    // Build update object dynamically to handle different DB naming styles
+    const updateData: any = { 
+      participants: updatedParticipants,
+      updatedat: new Date().toISOString()
+    };
+    
+    // Support multiple naming conventions for the admins column
+    if (convo.hasOwnProperty('admins')) updateData.admins = updatedAdmins;
+    if (convo.hasOwnProperty('admin_ids')) updateData.admin_ids = updatedAdmins;
 
     const { error: updateError } = await supabase
       .from('conversations')
@@ -311,7 +431,10 @@ app.post('/api/conversations/:id/action', async (req, res) => {
 
     if (updateError) throw updateError;
 
-    res.json({ success: true });
+    // Notify others via socket
+    io.to(id).emit('group_update', { id, action, targetUserId });
+
+    res.json({ success: true, action, targetUserId });
   } catch (err: any) {
     console.error('Error performing group action:', err.message || err);
     res.status(500).json({ error: 'Failed' });
@@ -338,24 +461,30 @@ app.get('/api/messages/:conversationId', async (req, res) => {
   try {
     const { data: messages, error } = await supabase
       .from('messages')
-      .select(MESSAGE_QUERY)
+      .select('*, reply_to:messages!reply_to_id(*)')
       .eq('conversationid', conversationId)
-      .order('timestamp', { ascending: true });
+      .order('timestamp', { ascending: false })
+      .range(0, 49); // Keep pagination to save IO
 
     if (error) throw error;
 
-    const mappedMessages = (messages || []).map(m => ({
+    // Newest are first due to order DESC, reverse for UI chronological order
+    const mappedMessages = (messages || []).reverse().map(m => ({
       ...m,
       senderId: m.senderid
     }));
 
     if (userId) {
-      await supabase
+      // Perform read status update in background or only if unread exists
+      supabase
         .from('messages')
         .update({ isread: true })
         .eq('conversationid', conversationId)
         .neq('senderid', userId)
-        .eq('isread', false);
+        .eq('isread', false)
+        .then(({ error: readError }) => {
+          if (readError) console.error('Error marking as read:', readError);
+        });
     }
 
     res.json(mappedMessages);
@@ -387,6 +516,12 @@ app.post('/api/messages', async (req, res) => {
       .single();
 
     if (msgError) throw msgError;
+
+    // Map to frontend format
+    const formattedMsg = {
+      ...newMessage,
+      senderId: newMessage.senderid
+    };
 
     await supabase
       .from('conversations')

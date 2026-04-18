@@ -10,6 +10,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '../utils/supabase';
 import { useAuth } from '../context/AuthContext';
+import { useData } from '../context/DataContext';
 
 // Standard icons based on type
 const getTypeIcon = (type: string) => {
@@ -37,12 +38,21 @@ interface SupabaseNotification {
 
 export default function Notifications() {
   const { user } = useAuth();
+  const { initialData } = useData();
   const [notifications, setNotifications] = useState<SupabaseNotification[]>([]);
   const [filter, setFilter] = useState<'all' | 'unread'>('all');
+  const [loading, setLoading] = useState(true);
 
   const fetchNotifications = async () => {
     if (!user) return;
 
+    if (initialData?.notifications) {
+      setNotifications(initialData.notifications);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
     try {
       const { data, error } = await supabase
         .from('notifications')
@@ -61,12 +71,14 @@ export default function Notifications() {
       setNotifications(data || []);
     } catch (err) {
       console.error('Error fetching notifications:', err);
+    } finally {
+      setLoading(false);
     }
   };
 
   useEffect(() => {
     fetchNotifications();
-  }, [user]);
+  }, [user, initialData]);
 
   const markAsRead = async (id: string) => {
     const { error } = await supabase

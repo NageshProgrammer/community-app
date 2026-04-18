@@ -1,13 +1,8 @@
-import {
-  createContext,
-  useContext,
-  useState,
-  useEffect,
-  useCallback,
-} from "react";
-import type { ReactNode } from "react";
-import { useAuth } from "./AuthContext";
-import { supabase } from "../utils/supabase";
+import { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
+import type { ReactNode } from 'react';
+import { useAuth } from './AuthContext';
+import { useData } from './DataContext';
+import { supabase } from '../utils/supabase';
 
 export interface PostData {
   id: string;
@@ -19,13 +14,13 @@ export interface PostData {
   };
   content: string;
   timestamp: string;
-  created_at: string; // <-- ADD THIS for accurate time math
+  created_at: string;
   likes: number;
   comments: number;
   reposts: number;
   isLiked?: boolean;
   isReposted?: boolean;
-  is_edited?: boolean; // <-- ADD THIS
+  is_edited?: boolean;
   image?: string | null;
   location?: string | null;
   reposted_post_id?: string | null;
@@ -80,8 +75,7 @@ export function PostProvider({ children }: { children: ReactNode }) {
     try {
       const { data, error: fetchError } = await supabase
         .from("posts")
-        .select(
-          `
+        .select(`
           *,
           author:profiles!author_id (
             id,
@@ -92,76 +86,64 @@ export function PostProvider({ children }: { children: ReactNode }) {
           likes:post_likes!post_id(count),
           comments:post_comments!post_id(count),
           reposts:post_reposts!post_id(count)
-        `,
-        )
+        `)
         .order("created_at", { ascending: false });
 
       if (fetchError) throw fetchError;
 
       const likedResponse = user
         ? await supabase
-            .from("post_likes")
-            .select("post_id")
-            .eq("user_id", user.id)
+          .from("post_likes")
+          .select("post_id")
+          .eq("user_id", user.id)
         : { data: [] };
       const repostedResponse = user
         ? await supabase
-            .from("post_reposts")
-            .select("post_id")
-            .eq("user_id", user.id)
+          .from("post_reposts")
+          .select("post_id")
+          .eq("user_id", user.id)
         : { data: [] };
 
-      const likedIds =
-        likedResponse.data?.map((item: any) => item.post_id) ?? [];
-      const repostedIds =
-        repostedResponse.data?.map((item: any) => item.post_id) ?? [];
+      const likedIds = likedResponse.data?.map((item: any) => item.post_id) ?? [];
+      const repostedIds = repostedResponse.data?.map((item: any) => item.post_id) ?? [];
 
       if (data && data.length > 0) {
         const repostIdsToFetch = data
-          .filter((p) => "reposted_post_id" in p && p.reposted_post_id)
+          .filter((p) => p.reposted_post_id)
           .map((p) => p.reposted_post_id);
 
-        const { data: originalPostsData } =
-          repostIdsToFetch.length > 0
-            ? await supabase
-                .from("posts")
-                .select(
-                  `
+        const { data: originalPostsData } = repostIdsToFetch.length > 0
+          ? await supabase.from('posts').select(`
               *, 
               author:profiles!author_id(*),
               likes:post_likes!post_id(count),
               comments:post_comments!post_id(count),
               reposts:post_reposts!post_id(count)
-            `,
-                )
-                .in("id", repostIdsToFetch)
-            : { data: [] };
+            `).in("id", repostIdsToFetch)
+          : { data: [] };
 
         const mappedPosts: PostData[] = (data as any[]).map((post) => {
-          const profile = Array.isArray(post.author)
-            ? post.author[0]
-            : post.author;
+          const profile = Array.isArray(post.author) ? post.author[0] : post.author;
 
           let originalPost = null;
-          if ("reposted_post_id" in post && post.reposted_post_id) {
-            const orig = originalPostsData?.find(
-              (p) => p.id === post.reposted_post_id,
-            );
+          if (post.reposted_post_id) {
+            const orig = originalPostsData?.find(p => p.id === post.reposted_post_id);
             if (orig) {
               originalPost = {
                 id: orig.id,
                 author: {
                   id: orig.author_id,
-                  name: orig.author?.full_name || "User",
-                  handle: orig.author?.username || "user",
-                  avatar: orig.author?.avatar_url || "",
+                  name: orig.author?.full_name || 'User',
+                  handle: orig.author?.username || 'user',
+                  avatar: orig.author?.avatar_url || ''
                 },
                 content: orig.content,
                 timestamp: new Date(orig.created_at).toLocaleString(),
+                created_at: orig.created_at,
                 likes: orig.likes?.[0]?.count || 0,
                 comments: orig.comments?.[0]?.count || 0,
                 reposts: orig.reposts?.[0]?.count || 0,
-                image: orig.image,
+                image: orig.image
               };
             }
           }
@@ -170,15 +152,9 @@ export function PostProvider({ children }: { children: ReactNode }) {
             id: post.id,
             author: {
               id: post.author_id,
-              name:
-                profile?.full_name ||
-                (post.author_id === user?.id
-                  ? user?.user_metadata?.full_name || "My User"
-                  : "User"),
+              name: profile?.full_name || (post.author_id === user?.id ? user?.user_metadata?.full_name || "My User" : "User"),
               handle: profile?.username || post.author_id.substring(0, 5),
-              avatar:
-                profile?.avatar_url ||
-                `https://api.dicebear.com/7.x/avataaars/svg?seed=${post.author_id}`,
+              avatar: profile?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${post.author_id}`,
             },
             content: post.content,
             timestamp: new Date(post.created_at).toLocaleString(),
@@ -200,17 +176,23 @@ export function PostProvider({ children }: { children: ReactNode }) {
         setPosts([]);
       }
     } catch (err: unknown) {
-      const message =
-        err instanceof Error ? err.message : "Failed to fetch posts";
+      const message = err instanceof Error ? err.message : "Failed to fetch posts";
       setError(message);
     } finally {
       setLoading(false);
     }
   }, [user]);
 
+  const { initialData } = useData();
+
   useEffect(() => {
-    fetchPosts();
-  }, [fetchPosts]);
+    if (initialData?.posts) {
+      setPosts(initialData.posts);
+      setLoading(false);
+    } else if (user?.id) {
+      fetchPosts();
+    }
+  }, [user?.id, fetchPosts, initialData?.posts]);
 
   const addPost = useCallback(
     async (
@@ -226,13 +208,9 @@ export function PostProvider({ children }: { children: ReactNode }) {
         if (image && image.startsWith("blob:")) {
           const imageBlob = await fetch(image).then((r) => r.blob());
           const fileName = `${userId}/${Date.now()}.jpg`;
-          const { error: uploadError } = await supabase.storage
-            .from("posts")
-            .upload(fileName, imageBlob);
+          const { error: uploadError } = await supabase.storage.from("posts").upload(fileName, imageBlob);
           if (uploadError) throw uploadError;
-          const { data: urlData } = supabase.storage
-            .from("posts")
-            .getPublicUrl(fileName);
+          const { data: urlData } = supabase.storage.from("posts").getPublicUrl(fileName);
           publicImageUrl = urlData.publicUrl;
         }
 
@@ -249,14 +227,9 @@ export function PostProvider({ children }: { children: ReactNode }) {
           .select();
 
         if (insertError) throw insertError;
-        if (!data || data.length === 0)
-          throw new Error("Failed to create post");
+        if (!data || data.length === 0) throw new Error("Failed to create post");
 
-        const { data: profileData } = await supabase
-          .from("profiles")
-          .select("username, full_name, avatar_url")
-          .eq("id", userId)
-          .single();
+        const { data: profileData } = await supabase.from("profiles").select("username, full_name, avatar_url").eq("id", userId).single();
 
         const mappedPost: PostData = {
           id: data[0].id,
@@ -264,25 +237,21 @@ export function PostProvider({ children }: { children: ReactNode }) {
             id: userId,
             name: profileData?.full_name || "Anonymous User",
             handle: profileData?.username || userId.substring(0, 5),
-            avatar:
-              profileData?.avatar_url ||
-              `https://api.dicebear.com/7.x/avataaars/svg?seed=${userId}`,
+            avatar: profileData?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${userId}`,
           },
           content: data[0].content,
           timestamp: "Just now",
-          created_at: new Date().toISOString(), // <-- ADD THIS
+          created_at: new Date().toISOString(),
           likes: 0,
           comments: 0,
           reposts: 0,
           isLiked: false,
           isReposted: false,
-          is_edited: false, // <-- ADD THIS
+          is_edited: false,
           image: publicImageUrl,
           location: location || null,
           reposted_post_id: reposted_post_id,
-          original_post: reposted_post_id
-            ? posts.find((p) => p.id === reposted_post_id)
-            : null,
+          original_post: reposted_post_id ? posts.find((p) => p.id === reposted_post_id) : null,
         };
 
         setPosts((prev) => [mappedPost, ...prev]);
@@ -290,7 +259,7 @@ export function PostProvider({ children }: { children: ReactNode }) {
         console.error("Error creating post:", err);
       }
     },
-    [],
+    [posts],
   );
 
   const editPost = useCallback(
@@ -301,16 +270,12 @@ export function PostProvider({ children }: { children: ReactNode }) {
           .from("posts")
           .update({ content: newContent, is_edited: true })
           .eq("id", postId)
-          .eq("author_id", user.id); // Security: ensure only the author can edit
+          .eq("author_id", user.id);
 
         if (error) throw error;
 
         setPosts((prev) =>
-          prev.map((p) =>
-            p.id === postId
-              ? { ...p, content: newContent, is_edited: true }
-              : p,
-          ),
+          prev.map((p) => p.id === postId ? { ...p, content: newContent, is_edited: true } : p)
         );
       } catch (err) {
         console.error("Error editing post:", err);
@@ -327,20 +292,11 @@ export function PostProvider({ children }: { children: ReactNode }) {
       if (!post) return;
 
       if (post.isLiked) {
-        await supabase
-          .from("post_likes")
-          .delete()
-          .match({ post_id: postId, user_id: user.id });
+        await supabase.from("post_likes").delete().match({ post_id: postId, user_id: user.id });
       } else {
-        await supabase
-          .from("post_likes")
-          .insert({ post_id: postId, user_id: user.id });
+        await supabase.from("post_likes").insert({ post_id: postId, user_id: user.id });
         if (user.id !== post.author.id) {
-          const { data: profile } = await supabase
-            .from("profiles")
-            .select("full_name, username")
-            .eq("id", user.id)
-            .single();
+          const { data: profile } = await supabase.from("profiles").select("full_name, username").eq("id", user.id).single();
           await supabase.from("notifications").insert({
             user_id: post.author.id,
             type: "like",
@@ -351,15 +307,7 @@ export function PostProvider({ children }: { children: ReactNode }) {
       }
 
       setPosts((prev) =>
-        prev.map((p) =>
-          p.id === postId
-            ? {
-                ...p,
-                isLiked: !p.isLiked,
-                likes: p.likes + (p.isLiked ? -1 : 1),
-              }
-            : p,
-        ),
+        prev.map((p) => p.id === postId ? { ...p, isLiked: !p.isLiked, likes: p.likes + (p.isLiked ? -1 : 1) } : p)
       );
     },
     [user, posts],
@@ -372,25 +320,12 @@ export function PostProvider({ children }: { children: ReactNode }) {
       if (!post) return;
 
       if (post.isReposted) {
-        await supabase
-          .from("post_reposts")
-          .delete()
-          .match({ post_id: postId, user_id: user.id });
+        await supabase.from("post_reposts").delete().match({ post_id: postId, user_id: user.id });
       } else {
-        await supabase
-          .from("post_reposts")
-          .insert({ post_id: postId, user_id: user.id });
+        await supabase.from("post_reposts").insert({ post_id: postId, user_id: user.id });
       }
       setPosts((prev) =>
-        prev.map((p) =>
-          p.id === postId
-            ? {
-                ...p,
-                isReposted: !p.isReposted,
-                reposts: p.reposts + (p.isReposted ? -1 : 1),
-              }
-            : p,
-        ),
+        prev.map((p) => p.id === postId ? { ...p, isReposted: !p.isReposted, reposts: p.reposts + (p.isReposted ? -1 : 1) } : p)
       );
     },
     [user, posts],
@@ -407,24 +342,16 @@ export function PostProvider({ children }: { children: ReactNode }) {
   const addComment = useCallback(
     async (postId: string, content: string) => {
       if (!user || !content.trim()) return;
-      const { error } = await supabase
-        .from("post_comments")
-        .insert({ post_id: postId, user_id: user.id, content });
+      const { error } = await supabase.from("post_comments").insert({ post_id: postId, user_id: user.id, content });
       if (error) throw error;
 
       setPosts((prev) =>
-        prev.map((p) =>
-          p.id === postId ? { ...p, comments: p.comments + 1 } : p,
-        ),
+        prev.map((p) => p.id === postId ? { ...p, comments: p.comments + 1 } : p)
       );
 
       const post = posts.find((p) => p.id === postId);
       if (post && user.id !== post.author.id) {
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("full_name, username")
-          .eq("id", user.id)
-          .single();
+        const { data: profile } = await supabase.from("profiles").select("full_name, username").eq("id", user.id).single();
         await supabase.from("notifications").insert({
           user_id: post.author.id,
           type: "comment",
@@ -441,17 +368,13 @@ export function PostProvider({ children }: { children: ReactNode }) {
       try {
         const { data, error } = await supabase
           .from("post_comments")
-          .select(
-            `id, content, created_at, user_id, author:profiles (id, username, full_name, avatar_url)`,
-          )
+          .select(`id, content, created_at, user_id, author:profiles (id, username, full_name, avatar_url)`)
           .eq("post_id", postId)
           .order("created_at", { ascending: true });
 
         if (error) throw error;
         return (data as any[]).map((comment) => {
-          const profile = Array.isArray(comment.author)
-            ? comment.author[0]
-            : comment.author;
+          const profile = Array.isArray(comment.author) ? comment.author[0] : comment.author;
           return {
             id: comment.id,
             content: comment.content,
@@ -460,9 +383,7 @@ export function PostProvider({ children }: { children: ReactNode }) {
               id: profile?.id || comment.user_id,
               name: profile?.full_name || "Anonymous User",
               handle: profile?.username || "unknown",
-              avatar:
-                profile?.avatar_url ||
-                `https://api.dicebear.com/7.x/avataaars/svg?seed=${profile?.username || "user"}`,
+              avatar: profile?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${profile?.username || "user"}`,
             },
           };
         });
@@ -489,10 +410,7 @@ export function PostProvider({ children }: { children: ReactNode }) {
     async (postId: string) => {
       if (!user) return;
       try {
-        const { error } = await supabase
-          .from("posts")
-          .delete()
-          .eq("id", postId);
+        const { error } = await supabase.from("posts").delete().eq("id", postId);
         if (error) throw error;
         setPosts((prev) => prev.filter((p) => p.id !== postId));
       } catch (err) {
@@ -502,24 +420,24 @@ export function PostProvider({ children }: { children: ReactNode }) {
     [user],
   );
 
+  const value = useMemo(() => ({
+    posts,
+    addPost,
+    editPost,
+    toggleLike,
+    toggleRepost,
+    quoteRepost,
+    addComment,
+    getComments,
+    sharePost,
+    deletePost,
+    refreshPosts: fetchPosts,
+    loading,
+    error
+  }), [posts, loading, error, fetchPosts, addPost, editPost, toggleLike, toggleRepost, quoteRepost, addComment, getComments, deletePost, sharePost]);
+
   return (
-    <PostContext.Provider
-      value={{
-        posts,
-        addPost,
-        editPost,
-        toggleLike,
-        toggleRepost,
-        quoteRepost,
-        addComment,
-        getComments,
-        sharePost,
-        deletePost,
-        refreshPosts: fetchPosts,
-        loading,
-        error,
-      }}
-    >
+    <PostContext.Provider value={value}>
       {children}
     </PostContext.Provider>
   );

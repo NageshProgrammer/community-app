@@ -54,8 +54,9 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
   const [showMemberSearch, setShowMemberSearch] = useState(false);
   const [groupAvatar, setGroupAvatar] = useState<string | null>(chat.avatar_url || null);
   const groupAvatarInputRef = useRef<HTMLInputElement>(null);
-  
+
   const scrollRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -122,7 +123,7 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
     try {
       const response = await fetch(`${BACKEND_URL}/api/conversations/${chat.id}/action`, {
         method: 'POST',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
           'x-user-id': user?.id || ''
         },
@@ -147,16 +148,30 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
   const fetchFollowing = async () => {
     if (!user) return;
     try {
-      const { data, error } = await supabase
+      // Step 1: Get the list of IDs you follow
+      const { data: followData, error: followError } = await supabase
         .from('follows')
-        .select(`
-          following_user_id,
-          user:profiles!following_user_id (id, username, full_name, avatar_url)
-        `)
+        .select('*')
         .eq('follower_id', user.id);
 
-      if (error) throw error;
-      const profiles = (data as any[]).map(d => d.user).filter(p => p !== null && !groupParticipants.find((gp: any) => gp.id === p.id));
+      if (followError) throw followError;
+      
+      const followingIds = (followData || []).map(f => f.following_id || f.following_user_id).filter(Boolean);
+      
+      if (followingIds.length === 0) {
+        setFollowingList([]);
+        return;
+      }
+
+      // Step 2: Fetch profiles for those IDs
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
+        .select('id, username, full_name, avatar_url')
+        .in('id', followingIds);
+
+      if (profileError) throw profileError;
+
+      const profiles = (profileData || []).filter(p => !groupParticipants.find((gp: any) => gp.id === p.id));
       setFollowingList(profiles);
     } catch (err) {
       console.error('Error fetching followers:', err);
@@ -175,13 +190,13 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
     try {
       const response = await fetch(`${BACKEND_URL}/api/conversations/${chat.id}/action`, {
         method: 'POST',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
           'x-user-id': user?.id || ''
         },
-        body: JSON.stringify({ 
-          action: 'add-members', 
-          newParticipants: selectedNewMembers 
+        body: JSON.stringify({
+          action: 'add-members',
+          newParticipants: selectedNewMembers
         })
       });
 
@@ -209,7 +224,7 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
     const content = text || newMessage;
     if (!content.trim() && !imageUrl && !voiceUrl) return;
     if (!user || !chat.id) return;
-    
+
     const replyId = replyingTo?.id;
 
     setNewMessage('');
@@ -218,9 +233,9 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
     try {
       const response = await fetch(`${BACKEND_URL}/api/messages`, {
         method: 'POST',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
-          'x-user-id': user.id 
+          'x-user-id': user.id
         },
         body: JSON.stringify({
           conversationId: chat.id,
@@ -304,7 +319,7 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
     try {
       const fileName = `groups/${chat.id}/${Date.now()}.jpg`;
       const { error: uploadError } = await supabase.storage
-        .from('avatars') 
+        .from('avatars')
         .upload(fileName, file);
 
       if (uploadError) throw uploadError;
@@ -314,11 +329,11 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
 
       const response = await fetch(`${BACKEND_URL}/api/conversations/${chat.id}/action`, {
         method: 'POST',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
-          'x-user-id': user.id 
+          'x-user-id': user.id
         },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           action: 'update-avatar',
           avatarUrl: publicUrl
         })
@@ -351,7 +366,7 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
       mediaRecorder.onstop = async () => {
         const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
         const fileName = `${user?.id}/voice-${Date.now()}.webm`;
-        
+
         setUploading(true);
         const { error } = await supabase.storage
           .from('message-attachments')
@@ -393,7 +408,7 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
       } else {
         await supabase.from('message_likes').insert({ message_id: messageId, user_id: user.id });
       }
-      
+
       setMessages(prev => prev.map(m => m.id === messageId ? { ...m, isLiked: !isLiked } : m));
     } catch (err) {
       console.error('Like failed:', err);
@@ -401,7 +416,7 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
   };
 
   return (
-    <motion.div 
+    <motion.div
       initial={{ opacity: 0, x: 20, scale: 0.98 }}
       animate={{ opacity: 1, x: 0, scale: 1 }}
       exit={{ opacity: 0, x: -20, scale: 0.98 }}
@@ -409,14 +424,14 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
       className="flex flex-col h-[calc(100vh-140px)] bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden shadow-2xl relative"
     >
       <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleImageUpload} />
-      
+
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b border-gray-800 bg-transparent z-10">
         <div className="flex items-center gap-3 flex-1">
           <button onClick={onBack} className="p-2 hover:bg-gray-800 rounded-full transition-colors">
             <ArrowLeft className="w-5 h-5 text-gray-300" />
           </button>
-          <div 
+          <div
             className={`flex items-center gap-3 cursor-pointer p-1 pr-4 rounded-xl transition-colors hover:bg-gray-800/50 ${chat.isGroup ? 'flex-1' : ''}`}
             onClick={() => chat.isGroup && setShowGroupInfo(true)}
           >
@@ -441,7 +456,7 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
             </div>
           </div>
         </div>
-        <button 
+        <button
           onClick={() => chat.isGroup ? setShowGroupInfo(true) : null}
           className="p-2 hover:bg-gray-800 rounded-full transition-colors"
         >
@@ -450,7 +465,7 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
       </div>
 
       {/* Messages Area */}
-      <div 
+      <div
         ref={scrollRef}
         className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin scrollbar-thumb-gray-800 z-0"
       >
@@ -459,22 +474,20 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
           const quote = Array.isArray(msg.reply_to) ? msg.reply_to[0] : msg.reply_to;
 
           return (
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               key={msg.id}
               className={`flex items-end gap-2 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}
             >
-              <div className={`group relative max-w-[80%] px-4 py-2.5 rounded-2xl shadow-sm ${
-                isMe 
-                  ? 'bg-brand/95 text-brand-contrast rounded-tr-sm' 
+              <div className={`group relative max-w-[80%] px-4 py-2.5 rounded-2xl shadow-sm ${isMe
+                  ? 'bg-brand/95 text-brand-contrast rounded-tr-sm'
                   : 'bg-gray-800 text-white rounded-tl-sm border border-gray-800/50'
-              }`}>
+                }`}>
                 {/* QUOTED REPLY RENDER */}
                 {quote && (
-                  <div className={`mb-2 p-2 rounded-lg border-l-4 text-[11px] min-w-[120px] ${
-                    isMe ? 'bg-black/30 border-brand' : 'bg-black/20 border-gray-500'
-                  }`}>
+                  <div className={`mb-2 p-2 rounded-lg border-l-4 text-[11px] min-w-[120px] ${isMe ? 'bg-black/30 border-brand' : 'bg-black/20 border-gray-500'
+                    }`}>
                     {/* Name: Show always in Groups, or if it isn't "me" in Private */}
                     {(chat.isGroup || quote.senderid !== user?.id) && (
                       <p className={`font-bold mb-0.5 ${isMe ? 'text-brand' : 'text-gray-400'}`}>
@@ -483,7 +496,7 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
                     )}
                     {/* Special case: If Private and its "You", show "You" anyway for clarity like Image 1 */}
                     {!chat.isGroup && quote.senderid === user?.id && (
-                       <p className={`font-bold mb-0.5 text-brand`}>You</p>
+                      <p className={`font-bold mb-0.5 text-brand`}>You</p>
                     )}
 
                     <div className="flex items-center gap-1 opacity-90 text-white">
@@ -499,7 +512,7 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
                 {msg.image_url && msg.image_url.startsWith('http') && (
                   <img src={msg.image_url} alt="Attached" className="rounded-lg mb-2 max-w-full h-auto cursor-pointer hover:opacity-90" onClick={() => window.open(msg.image_url, '_blank')} />
                 )}
-                
+
                 {msg.voice_url && msg.voice_url.startsWith('http') && (
                   <div className="mb-2">
                     <audio src={msg.voice_url} controls className="h-8 max-w-[200px] bg-transparent invert rounded-full" />
@@ -533,12 +546,10 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
                     </p>
                   )
                 )}
-                
                 <div className="flex items-center justify-between gap-4 mt-1">
                   <p className={`text-[10px] font-semibold ${isMe ? 'opacity-60' : 'text-gray-500'}`}>
                     {new Date(msg.timestamp || msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </p>
-                  
                   {/* Action Icons (Hover triggers) */}
                   <div className="flex items-center gap-2">
                     {isMe && (msg.text || msg.image_url || msg.voice_url) && editingMessageId !== msg.id && (
@@ -546,7 +557,7 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
                         <Pencil size={12 } className='hover:text-yellow-400' />
                       </button>
                     )}
-                    <button onClick={() => setReplyingTo(msg)} className="text-gray-500 opacity-0 group-hover:opacity-100  transition-all" title="Reply">
+                    <button onClick={() => { setReplyingTo(msg); inputRef.current?.focus(); }} className="text-gray-500 opacity-0 group-hover:opacity-100  transition-all" title="Reply">
                       <Reply size={12} className='hover:text-blue-400' />
                     </button>
                     <button onClick={() => toggleMessageLike(msg.id)} className={`transition-all duration-300 transform active:scale-150 ${msg.isLiked ? 'text-pink-500' : 'text-gray-500 opacity-0 group-hover:opacity-100'}`} title="Like">
@@ -563,11 +574,11 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
       {/* REPLY PREVIEW */}
       <AnimatePresence>
         {replyingTo && (
-          <motion.div 
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            className="px-4 py-3 border-t border-gray-800 bg-gray-900/95 flex items-center justify-between gap-4 backdrop-blur-md"
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 10 }}
+            className="px-4 py-2 border-t border-gray-800 bg-gray-900/95 flex items-center justify-between gap-4 backdrop-blur-md"
           >
             <div className="flex-1 border-l-4 border-brand pl-3 py-1 bg-white/5 rounded-r-lg">
               <p className="text-[11px] text-brand font-bold mb-0.5">
@@ -591,53 +602,58 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
       {/* Input Area */}
       <div className="p-4 border-t border-gray-800 bg-transparent z-10">
         <div className="flex items-center gap-2 bg-gray-800 border border-gray-800 rounded-2xl px-4 py-2 shadow-inner">
-          <button type="button" disabled={uploading} onClick={() => fileInputRef.current?.click()} className={`text-gray-500 hover:text-brand transition-colors ${uploading ? 'animate-pulse' : ''}`}>
+          <button type="button" disabled={uploading} onClick={() => fileInputRef.current?.click()} className={`text-gray-500 hover:text-white transition-colors ${uploading ? 'animate-pulse' : ''}`}>
             <Image className="w-5 h-5" />
           </button>
-          <button onClick={() => setShowEmojis(!showEmojis)} className={`text-gray-500 hover:text-brand transition-colors relative ${showEmojis ? 'text-brand' : ''}`}>
-             <Smile className="w-5 h-5" />
-             
-             {/* Emoji Picker Popup */}
-             <AnimatePresence>
-               {showEmojis && (
-                 <motion.div
-                   initial={{ opacity: 0, scale: 0.9, y: 10 }}
-                   animate={{ opacity: 1, scale: 1, y: 0 }}
-                   exit={{ opacity: 0, scale: 0.9, y: 10 }}
-                   className="absolute bottom-full mb-4 left-0 w-[280px] sm:w-[320px] bg-[#121B22]/95 backdrop-blur-xl border border-white/5 rounded-3xl shadow-2xl overflow-hidden z-[120]"
-                   onClick={(e) => e.stopPropagation()}
-                 >
-                   <div className="p-3 border-b border-white/5 bg-white/5">
-                     <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">Popular Emojis</p>
-                   </div>
-                   <div className="p-2 grid grid-cols-8 gap-1 max-h-[250px] overflow-y-auto custom-scrollbar">
-                     {COMMON_EMOJIS.map((emoji, i) => (
-                       <button
-                         key={i}
-                         onClick={() => {
-                           setNewMessage(prev => prev + emoji);
-                           // Optional: Keep open for multiple emojis
-                         }}
-                         className="flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 hover:bg-white/10 rounded-xl transition-all text-xl"
-                       >
-                         {emoji}
-                       </button>
-                     ))}
-                   </div>
-                   <div className="p-3 border-t border-white/5 bg-white/5 flex justify-end">
-                     <button 
-                       onClick={() => setShowEmojis(false)}
-                       className="text-xs font-bold text-[#00A884] hover:underline"
-                     >
-                       Done
-                     </button>
-                   </div>
-                 </motion.div>
-               )}
-             </AnimatePresence>
-          </button>
-          <input 
-            type="text" 
+          <div 
+            role="button" 
+            onClick={() => setShowEmojis(!showEmojis)} 
+            className={`text-gray-500 hover:text-white transition-colors relative cursor-pointer ${showEmojis ? 'text-brand' : ''}`}
+          >
+            <Smile className="w-5 h-5" />
+
+            {/* Emoji Picker Popup */}
+            <AnimatePresence>
+              {showEmojis && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.9, y: 10 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.9, y: 10 }}
+                  className="absolute bottom-full mb-4 left-0 w-[280px] sm:w-[320px] bg-[#121B22]/95 backdrop-blur-xl border border-white/5 rounded-3xl shadow-2xl overflow-hidden z-[120]"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="p-3 border-b border-white/5 bg-white/5">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">Popular Emojis</p>
+                  </div>
+                  <div className="p-2 grid grid-cols-8 gap-1 max-h-[250px] overflow-y-auto custom-scrollbar">
+                    {COMMON_EMOJIS.map((emoji, i) => (
+                      <button
+                        key={i}
+                        onClick={() => {
+                          setNewMessage(prev => prev + emoji);
+                          // Optional: Keep open for multiple emojis
+                        }}
+                        className="flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 hover:bg-white/10 rounded-xl transition-all text-xl"
+                      >
+                        {emoji}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="p-3 border-t border-white/5 bg-white/5 flex justify-end">
+                    <button
+                      onClick={() => setShowEmojis(false)}
+                      className="text-xs font-bold text-[#00A884] hover:underline"
+                    >
+                      Done
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+          <input
+            ref={inputRef}
+            type="text"
             placeholder={isRecording ? "Recording voice..." : uploading ? "Uploading..." : "Type a message..."}
             value={newMessage}
             disabled={uploading || isRecording}
@@ -650,7 +666,7 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
               <Send className="w-4 h-4 ml-0.5" />
             </button>
           ) : (
-            <button onClick={isRecording ? stopRecording : startRecording} className={`p-2 rounded-full transition-all duration-300 ${isRecording ? 'bg-red-500 text-white animate-pulse' : 'text-gray-500 hover:text-brand'}`}>
+            <button onClick={isRecording ? stopRecording : startRecording} className={`p-2 rounded-full transition-all duration-300 ${isRecording ? 'bg-red-500 text-white animate-pulse' : 'text-gray-500 hover:text-white'}`}>
               <Mic className="w-5 h-5" />
             </button>
           )}
@@ -687,43 +703,43 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
               {/* Profile Hero Section - WhatsApp Style */}
               <div className="flex flex-col items-center pt-8 pb-10 bg-[#121B22] border-b border-gray-800/50">
                 <div className="relative mb-6">
-                   <motion.div 
-                     initial={{ scale: 0.8, opacity: 0 }}
-                     animate={{ scale: 1, opacity: 1 }}
-                     className={`w-40 h-40 rounded-full flex items-center justify-center text-white font-bold text-6xl ${chat.avatarColor} shadow-2xl ring-4 ring-white/5 overflow-hidden`}
-                   >
-                     {groupAvatar ? (
-                       <img src={groupAvatar} className="w-full h-full object-cover" />
-                     ) : (
-                       chat.initials
-                     )}
-                   </motion.div>
+                  <motion.div
+                    initial={{ scale: 0.8, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    className={`w-40 h-40 rounded-full flex items-center justify-center text-white font-bold text-6xl ${chat.avatarColor} shadow-2xl ring-4 ring-white/5 overflow-hidden`}
+                  >
+                    {groupAvatar ? (
+                      <img src={groupAvatar} className="w-full h-full object-cover" />
+                    ) : (
+                      chat.initials
+                    )}
+                  </motion.div>
 
-                   {/* Admin Camera Overlay */}
-                   {currentUserIsAdmin && (
-                     <motion.button
-                       whileHover={{ scale: 1.1 }}
-                       whileTap={{ scale: 0.9 }}
-                       onClick={() => groupAvatarInputRef.current?.click()}
-                       disabled={uploading}
-                       className="absolute bottom-1 right-1 p-3 bg-[#00A884] rounded-full text-white shadow-xl hover:bg-[#008F6F] transition-all border-4 border-[#121B22] z-30"
-                       title="Change Group Photo"
-                     >
-                       <Camera className={`w-6 h-6 ${uploading ? 'animate-spin' : ''}`} />
-                       <input 
-                         type="file" 
-                         ref={groupAvatarInputRef} 
-                         onChange={handleGroupAvatarUpload} 
-                         className="hidden" 
-                         accept="image/*" 
-                       />
-                     </motion.button>
-                   )}
+                  {/* Admin Camera Overlay */}
+                  {currentUserIsAdmin && (
+                    <motion.button
+                      whileHover={{ scale: 1.1 }}
+                      whileTap={{ scale: 0.9 }}
+                      onClick={() => groupAvatarInputRef.current?.click()}
+                      disabled={uploading}
+                      className="absolute bottom-1 right-1 p-3 bg-[#00A884] rounded-full text-white shadow-xl hover:bg-[#008F6F] transition-all border-4 border-[#121B22] z-30"
+                      title="Change Group Photo"
+                    >
+                      <Camera className={`w-6 h-6 ${uploading ? 'animate-spin' : ''}`} />
+                      <input
+                        type="file"
+                        ref={groupAvatarInputRef}
+                        onChange={handleGroupAvatarUpload}
+                        className="hidden"
+                        accept="image/*"
+                      />
+                    </motion.button>
+                  )}
                 </div>
                 <div className="text-center px-6">
                   <h2 className="text-3xl font-black text-white mb-1">{chat.sender}</h2>
                   <p className="text-gray-400 font-medium text-sm">
-                    {groupParticipants.length > 0 
+                    {groupParticipants.length > 0
                       ? `Group · ${groupParticipants.length} ${groupParticipants.length === 1 ? 'member' : 'members'}`
                       : 'Fetching members...'
                     }
@@ -746,7 +762,7 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
                     <h4 className="text-[12px] font-bold uppercase tracking-widest text-gray-500">
                       {groupParticipants.length} Participants
                     </h4>
-                    <button 
+                    <button
                       onClick={() => setShowMemberSearch(!showMemberSearch)}
                       className={`p-1.5 rounded-lg transition-colors ${showMemberSearch ? 'bg-brand/20 text-brand' : 'text-[#00A884] hover:bg-white/5'}`}
                     >
@@ -755,13 +771,13 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
                   </div>
 
                   {showMemberSearch && (
-                    <motion.div 
+                    <motion.div
                       initial={{ height: 0, opacity: 0 }}
                       animate={{ height: 'auto', opacity: 1 }}
                       className="relative px-1"
                     >
                       <Search size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" />
-                      <input 
+                      <input
                         type="text"
                         placeholder="Search existing members..."
                         value={memberSearch}
@@ -771,11 +787,11 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
                       />
                     </motion.div>
                   )}
-                  
+
                   <div className="space-y-2">
                     {/* Add Member Shortcut */}
                     {!memberSearch && (
-                      <button 
+                      <button
                         onClick={() => setShowAddMemberModal(true)}
                         className="w-full flex items-center gap-4 p-3 rounded-xl hover:bg-white/5 transition-all text-[#00A884] font-bold text-sm"
                       >
@@ -796,68 +812,68 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
                       </div>
                     ) : (
                       groupParticipants
-                        .filter(m => 
-                          memberSearch === '' || 
+                        .filter(m =>
+                          memberSearch === '' ||
                           m.full_name.toLowerCase().includes(memberSearch.toLowerCase()) ||
                           m.username.toLowerCase().includes(memberSearch.toLowerCase())
                         )
                         .map((member) => {
                           const isMe = member.id === user?.id;
-                        const myProfile = groupParticipants.find(p => p.id === user?.id);
-                        const iAmAdmin = myProfile?.isAdmin;
+                          const myProfile = groupParticipants.find(p => p.id === user?.id);
+                          const iAmAdmin = myProfile?.isAdmin;
 
-                        return (
-                          <div key={member.id} className="group/member flex items-center gap-4 p-3 rounded-2xl hover:bg-white/5 transition-all border border-transparent hover:border-white/5">
-                            <div className="relative">
-                              <img src={member.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${member.username}`} className="w-12 h-12 rounded-full object-cover ring-1 ring-white/10" alt={member.full_name} />
+                          return (
+                            <div key={member.id} className="group/member flex items-center gap-4 p-3 rounded-2xl hover:bg-white/5 transition-all border border-transparent hover:border-white/5">
+                              <div className="relative">
+                                <img src={member.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${member.username}`} className="w-12 h-12 rounded-full object-cover ring-1 ring-white/10" alt={member.full_name} />
+                                {member.isAdmin && (
+                                  <div className="absolute -bottom-1 -right-1 bg-brand p-0.5 rounded-full border border-gray-900">
+                                    <ShieldCheck size={10} className="text-white" />
+                                  </div>
+                                )}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <p className="font-bold text-white truncate text-base">{member.full_name} {isMe && <span className="text-[#00A884] text-xs ml-1">(You)</span>}</p>
+                                </div>
+                                <p className="text-xs text-gray-500 font-medium">@{member.username}</p>
+                              </div>
+
                               {member.isAdmin && (
-                                <div className="absolute -bottom-1 -right-1 bg-brand p-0.5 rounded-full border border-gray-900">
-                                  <ShieldCheck size={10} className="text-white" />
+                                <span className="px-2 py-0.5 bg-[#00A884]/10 text-[#00A884] text-[9px] font-black uppercase rounded border border-[#00A884]/20">Admin</span>
+                              )}
+
+                              {/* Admin Controls */}
+                              {iAmAdmin && !isMe && (
+                                <div className="hidden group-hover/member:flex items-center gap-1 transition-all">
+                                  {!member.isAdmin && (
+                                    <button
+                                      onClick={() => handleGroupAction('make-admin', member.id)}
+                                      className="p-2 hover:bg-[#00A884]/10 text-[#00A884] rounded-lg transition-colors"
+                                      title="Make Admin"
+                                    >
+                                      <ShieldCheck size={20} />
+                                    </button>
+                                  )}
+                                  <button
+                                    onClick={() => handleGroupAction('remove', member.id)}
+                                    className="p-2 hover:bg-red-500/10 text-red-500 rounded-lg transition-colors"
+                                    title="Remove Member"
+                                  >
+                                    <UserMinus size={20} />
+                                  </button>
                                 </div>
                               )}
                             </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2">
-                                <p className="font-bold text-white truncate text-base">{member.full_name} {isMe && <span className="text-[#00A884] text-xs ml-1">(You)</span>}</p>
-                              </div>
-                              <p className="text-xs text-gray-500 font-medium">@{member.username}</p>
-                            </div>
-
-                            {member.isAdmin && (
-                              <span className="px-2 py-0.5 bg-[#00A884]/10 text-[#00A884] text-[9px] font-black uppercase rounded border border-[#00A884]/20">Admin</span>
-                            )}
-
-                            {/* Admin Controls */}
-                            {iAmAdmin && !isMe && (
-                              <div className="hidden group-hover/member:flex items-center gap-1 transition-all">
-                                {!member.isAdmin && (
-                                  <button 
-                                    onClick={() => handleGroupAction('make-admin', member.id)}
-                                    className="p-2 hover:bg-[#00A884]/10 text-[#00A884] rounded-lg transition-colors"
-                                    title="Make Admin"
-                                  >
-                                    <ShieldCheck size={20} />
-                                  </button>
-                                )}
-                                <button 
-                                  onClick={() => handleGroupAction('remove', member.id)}
-                                  className="p-2 hover:bg-red-500/10 text-red-500 rounded-lg transition-colors"
-                                  title="Remove Member"
-                                >
-                                  <UserMinus size={20} />
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })
+                          );
+                        })
                     )}
                   </div>
                 </div>
 
                 {/* Exit Group Section */}
                 <div className="pt-8 border-t border-gray-800 space-y-4">
-                  <motion.button 
+                  <motion.button
                     whileHover={{ x: 5 }}
                     onClick={() => handleGroupAction('exit')}
                     className="w-full flex items-center gap-4 p-5 rounded-2xl text-[#EA0038] font-bold hover:bg-[#EA0038]/10 transition-all border border-[#EA0038]/20 group"
@@ -893,7 +909,7 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
               onClick={() => setShowAddMemberModal(false)}
               className="absolute inset-0 bg-black/80 backdrop-blur-sm"
             />
-            
+
             <motion.div
               initial={{ opacity: 0, scale: 0.9, y: 30 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -910,7 +926,7 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
               <div className="p-4 border-b border-white/5">
                 <div className="relative">
                   <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
-                  <input 
+                  <input
                     type="text"
                     placeholder="Search followers..."
                     value={followerSearch}
@@ -922,21 +938,19 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
 
               <div className="flex-1 overflow-y-auto p-2 space-y-1 scrollbar-hide">
                 {followingList.filter(u => u.full_name.toLowerCase().includes(followerSearch.toLowerCase())).map((profile) => (
-                  <div 
+                  <div
                     key={profile.id}
                     onClick={() => setSelectedNewMembers(prev => prev.includes(profile.id) ? prev.filter(id => id !== profile.id) : [...prev, profile.id])}
-                    className={`flex items-center gap-3 p-3 rounded-2xl cursor-pointer transition-all ${
-                      selectedNewMembers.includes(profile.id) ? 'bg-[#00A884]/10' : 'hover:bg-white/5'
-                    }`}
+                    className={`flex items-center gap-3 p-3 rounded-2xl cursor-pointer transition-all ${selectedNewMembers.includes(profile.id) ? 'bg-[#00A884]/10' : 'hover:bg-white/5'
+                      }`}
                   >
                     <img src={profile.avatar_url} className="w-10 h-10 rounded-full" alt={profile.full_name} />
                     <div className="flex-1">
                       <p className="font-bold text-sm text-white">{profile.full_name}</p>
                       <p className="text-gray-500 text-xs">@{profile.username}</p>
                     </div>
-                    <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all ${
-                      selectedNewMembers.includes(profile.id) ? 'bg-[#00A884] border-[#00A884]' : 'border-gray-600'
-                    }`}>
+                    <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all ${selectedNewMembers.includes(profile.id) ? 'bg-[#00A884] border-[#00A884]' : 'border-gray-600'
+                      }`}>
                       {selectedNewMembers.includes(profile.id) && <ShieldCheck size={14} className="text-white" />}
                     </div>
                   </div>
