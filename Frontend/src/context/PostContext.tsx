@@ -25,6 +25,7 @@ export interface PostData {
   location?: string | null;
   reposted_post_id?: string | null;
   original_post?: PostData | null;
+  author_id?: string;
 }
 
 export interface CommentData {

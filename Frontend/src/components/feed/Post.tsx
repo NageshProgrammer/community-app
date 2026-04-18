@@ -38,8 +38,7 @@ export function Post({ post, index, onLike, onComment, onDelete, onEdit, activeD
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const isOwnPost = (user?.id === post.author?.id) || 
-                    (user?.id === post.author_id) || 
-                    (user?.id === post.author?.userId);
+                    (user?.id === post.author_id);
 
   const showOptions = activeDropdownId === post.id;
   const showShareOptions = activeDropdownId === post.id + '-share';
