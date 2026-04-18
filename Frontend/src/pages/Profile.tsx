@@ -610,7 +610,7 @@ export function Profile() {
                   onClick={() => openFollowModal('following')}
                   className="hover:underline transition-all flex gap-1 items-center group"
                 >
-                  <span className="text-black dark:text-white font-bold group-hover:text-brand">
+                  <span className="text-white font-bold group-hover:text-brand">
                     {isOwnProfile ? followingIds.length : followingCount}
                   </span>{" "}
                   <span className="text-gray-600 dark:text-gray-400">
@@ -621,7 +621,7 @@ export function Profile() {
                   onClick={() => openFollowModal('followers')}
                   className="hover:underline transition-all flex gap-1 items-center group"
                 >
-                  <span className="text-black dark:text-white font-bold group-hover:text-brand">
+                  <span className="text-white font-bold group-hover:text-brand">
                     {targetUserId && followerCounts[targetUserId] !== undefined
                       ? followerCounts[targetUserId]
                       : followerCount}
@@ -646,8 +646,8 @@ export function Profile() {
             <span
               className={
                 activeTab === tab
-                  ? "text-black dark:text-white font-bold"
-                  : "text-gray-500 dark:text-gray-400 font-medium"
+                  ? "text-black font-bold"
+                  : "text-gray-400 font-medium"
               }
             >
               {tab}
