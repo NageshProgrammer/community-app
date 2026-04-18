@@ -10,7 +10,7 @@ import { SearchX, ArrowLeft } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom'; 
 
 export function Feed() {
-  const { posts, addPost, toggleLike, toggleRepost, addComment, deletePost } = usePosts();
+  const { posts, addPost, toggleLike, toggleRepost, addComment, deletePost, editPost } = usePosts();
   const { user } = useAuth();
   const { searchQuery, setSearchQuery } = useSocial();
   
@@ -115,6 +115,7 @@ export function Feed() {
                 onRepost={() => toggleRepost(post.id)}
                 onComment={(comment) => addComment(post.id, comment)}
                 onDelete={() => deletePost(post.id)}
+                onEdit={async (newContent) => await editPost(post.id, newContent)}
                 activeDropdownId={activeDropdownId}
                 setActiveDropdownId={setActiveDropdownId}
               />

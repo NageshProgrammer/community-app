@@ -1,7 +1,6 @@
-// src/components/feed/Post.tsx
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useEffect, useRef } from 'react';
-import { MessageCircle, Repeat, Heart, Share, MoreHorizontal, MapPin, Trash2, Link as LinkIcon, Send } from 'lucide-react';
+import { MessageCircle, Repeat, Heart, Share, MoreHorizontal, MapPin, Trash2, Link as LinkIcon, Send, Pencil } from 'lucide-react';
 import { usePosts, type CommentData, type PostData } from '../../context/PostContext';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext'; 
@@ -13,16 +12,22 @@ interface PostProps {
   onRepost: () => void;
   onComment: (comment: string) => void;
   onDelete?: () => void; 
+  onEdit?: (newContent: string) => Promise<void>; 
   activeDropdownId: string | null;
   setActiveDropdownId: (id: string | null) => void;
 }
 
-export function Post({ post, index, onLike, onRepost, onComment, onDelete, activeDropdownId, setActiveDropdownId }: PostProps) {
+export function Post({ post, index, onLike, onRepost, onComment, onDelete, onEdit, activeDropdownId, setActiveDropdownId }: PostProps) {
   const [commentText, setCommentText] = useState('');
   const [showCommentInput, setShowCommentInput] = useState(false);
   const [showQuoteModal, setShowQuoteModal] = useState(false);
   const [quoteText, setQuoteText] = useState('');
   const [repostMenuOpen, setRepostMenuOpen] = useState(false);
+  
+  // Edit States
+  const [isEditing, setIsEditing] = useState(false);
+  const [editContent, setEditContent] = useState('');
+  const [isSubmittingEdit, setIsSubmittingEdit] = useState(false);
   
   const { getComments, quoteRepost } = usePosts();
   const { user } = useAuth(); 
@@ -32,12 +37,12 @@ export function Post({ post, index, onLike, onRepost, onComment, onDelete, activ
   
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Check if the current user is the author of this post
   const isOwnPost = user?.id === post.author.id;
-  
-  // Determine if this specific post's dropdown is the active one
   const showOptions = activeDropdownId === post.id;
   const showShareOptions = activeDropdownId === post.id + '-share';
+
+  // FIX: Determine if this specific post needs to be pulled to the front
+  const isAnyMenuOpen = showOptions || showShareOptions || repostMenuOpen;
 
   useEffect(() => {
     if (showCommentInput) {
@@ -72,7 +77,6 @@ export function Post({ post, index, onLike, onRepost, onComment, onDelete, activ
     setComments(data);
   };
 
-  // Handle Copy Link
   const handleCopyLink = () => {
     const url = `${window.location.origin}/community?shared=${post.id}`;
     navigator.clipboard.writeText(url);
@@ -80,13 +84,12 @@ export function Post({ post, index, onLike, onRepost, onComment, onDelete, activ
     alert("Link copied to clipboard!"); 
   };
 
-  // Handle Dropdown Toggle
   const handleToggleOptions = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (showOptions) {
-      setActiveDropdownId(null); // Close if already open
+      setActiveDropdownId(null);
     } else {
-      setActiveDropdownId(post.id); // Open this one (and close others)
+      setActiveDropdownId(post.id); 
     }
   };
 
@@ -95,6 +98,41 @@ export function Post({ post, index, onLike, onRepost, onComment, onDelete, activ
       setActiveDropdownId(null);
     } else {
       setActiveDropdownId(post.id + '-share');
+    }
+  };
+
+  // Edit Logic
+  const handleInitiateEdit = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    
+    // Check if 5 minutes have passed
+    const postTime = new Date(post.created_at).getTime();
+    const currentTime = new Date().getTime();
+    const diffInMinutes = (currentTime - postTime) / (1000 * 60);
+
+    if (diffInMinutes > 5) {
+      alert("Posts cannot be edited after 5 minutes of being published.");
+    } else {
+      setEditContent(post.content);
+      setIsEditing(true);
+    }
+    setActiveDropdownId(null);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editContent.trim() || editContent === post.content) {
+      setIsEditing(false);
+      return;
+    }
+    
+    setIsSubmittingEdit(true);
+    try {
+      if (onEdit) await onEdit(editContent.trim());
+      setIsEditing(false);
+    } catch (error) {
+      alert("Failed to edit post. Please try again.");
+    } finally {
+      setIsSubmittingEdit(false);
     }
   };
 
@@ -110,7 +148,6 @@ export function Post({ post, index, onLike, onRepost, onComment, onDelete, activ
         window.open(`https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`, '_blank');
         break;
       case 'messenger':
-        // Standard Facebook sharer for Messenger compatibility
         window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`, '_blank');
         break;
       case 'copy':
@@ -126,7 +163,8 @@ export function Post({ post, index, onLike, onRepost, onComment, onDelete, activ
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.95 }}
       transition={{ duration: 0.4, delay: index * 0.1 }}
-      className="p-4 border-b border-gray-800 hover:bg-gray-800 transition-colors relative z-10"
+      // FIX: Dynamically change z-index from z-10 to z-50 if a menu is open
+      className={`p-4 border-b border-gray-800 hover:bg-gray-800 transition-colors relative ${isAnyMenuOpen ? 'z-50' : 'z-10'}`}
     >
       <div className="flex gap-4">
         {/* Avatar */}
@@ -150,6 +188,10 @@ export function Post({ post, index, onLike, onRepost, onComment, onDelete, activ
               <span className="text-gray-400 ml-2 font-medium">@{post.author.handle}</span>
               <span className="text-gray-500 mx-1">·</span>
               <span className="text-gray-400 hover:underline">{post.timestamp}</span>
+              {/* EDITED TAG */}
+              {post.is_edited && (
+                <span className="text-gray-500 text-xs ml-2 italic">(Edited)</span>
+              )}
             </div>
             
             {/* OPTIONS MENU WRAPPER */}
@@ -163,11 +205,9 @@ export function Post({ post, index, onLike, onRepost, onComment, onDelete, activ
                 <MoreHorizontal size={20} />
               </motion.button>
 
-              {/* LIQUID GLASS OPTIONS DROPDOWN */}
               <AnimatePresence>
                 {showOptions && (
                   <>
-                    {/* Invisible overlay to close dropdown when clicking outside */}
                     <div className="fixed inset-0 z-40" onClick={(e) => { e.stopPropagation(); setActiveDropdownId(null); }} />
                     
                     <motion.div
@@ -175,22 +215,30 @@ export function Post({ post, index, onLike, onRepost, onComment, onDelete, activ
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       exit={{ opacity: 0, y: -10, scale: 0.95 }}
                       transition={{ duration: 0.15 }}
-                      className="absolute right-0 top-10 w-48 bg-white dark:bg-gray-900/95 backdrop-blur-xl border border-gray-200 dark:border-gray-700/50 rounded-2xl shadow-2xl overflow-hidden z-50 py-1"
+                      className="absolute right-0 top-10 w-48 bg-white/10 dark:bg-gray-900/95 backdrop-blur-xl border border-gray-200 dark:border-gray-700/50 rounded-2xl shadow-2xl overflow-hidden z-50 py-1"
                     >
                       <button 
                         onClick={(e) => { e.stopPropagation(); handleCopyLink(); }}
-                        className="w-full text-left px-4 py-3 text-gray-900 hover:text-gray-900 dark:text-white dark:hover:text-white text-sm font-medium transition-colors flex items-center gap-3 group cursor-pointer"
+                        className="w-full text-left px-4 py-3  cursor-pointer hover:bg-white/5 dark:text-white text-sm font-medium transition-colors flex items-center gap-3 group"
                       >
                         <LinkIcon size={16} className="text-gray-500 group-hover:text-gray-900 dark:text-gray-400 dark:group-hover:text-gray-300 transition-colors " /> Copy Link
                       </button>
                       
                       {isOwnPost && (
-                        <button 
-                          onClick={(e) => { e.stopPropagation(); setActiveDropdownId(null); onDelete && onDelete(); }}
-                          className="w-full text-left px-4 py-3 hover:bg-red-50 cursor-pointer dark:hover:bg-red-500/10 text-red-600 hover:text-red-700 dark:text-red-500 dark:hover:text-red-400 text-sm font-medium transition-colors flex items-center gap-3 group"
-                        >
-                          <Trash2 size={16} className="transition-colors " /> Delete Post
-                        </button>
+                        <>
+                          <button 
+                            onClick={handleInitiateEdit}
+                            className="w-full text-left px-4 py-3  cursor-pointer hover:bg-white/5 dark:text-white text-sm font-medium transition-colors flex items-center gap-3 group"
+                          >
+                            <Pencil size={16} className="text-gray-500 group-hover:text-gray-300 transition-colors " /> Edit Post
+                          </button>
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); setActiveDropdownId(null); onDelete && onDelete(); }}
+                            className="w-full text-left px-4 py-3 hover:bg-red-50 cursor-pointer dark:hover:bg-red-500/10 text-red-600 hover:text-red-700 dark:text-red-500 dark:hover:text-red-400 text-sm font-medium transition-colors flex items-center gap-3 group"
+                          >
+                            <Trash2 size={16} className="transition-colors " /> Delete Post
+                          </button>
+                        </>
                       )}
                     </motion.div>
                   </>
@@ -199,7 +247,6 @@ export function Post({ post, index, onLike, onRepost, onComment, onDelete, activ
             </div>
           </div>
 
-          {/* Repost Header Label */}
           {post.reposted_post_id && !post.content && (
              <div className="flex items-center gap-2 mb-1 -mt-1">
                 <Repeat size={12} className="text-gray-500" />
@@ -207,11 +254,37 @@ export function Post({ post, index, onLike, onRepost, onComment, onDelete, activ
              </div>
           )}
 
-          {/* Content */}
+          {/* EDIT OR DISPLAY CONTENT */}
           {post.content && (
-            <p className="mt-2 text-[15px] leading-relaxed whitespace-pre-wrap text-gray-100">
-              {post.content}
-            </p>
+            isEditing ? (
+              <div className="mt-3 bg-gray-800/50 rounded-2xl border border-gray-700 p-3">
+                <textarea
+                  value={editContent}
+                  onChange={(e) => setEditContent(e.target.value)}
+                  className="w-full bg-transparent border-none focus:outline-none text-white text-[15px] resize-none min-h-[80px]"
+                  autoFocus
+                />
+                <div className="flex justify-end gap-2 mt-2">
+                  <button 
+                    onClick={() => setIsEditing(false)}
+                    className="px-4 py-1.5 rounded-full text-sm font-bold text-gray-400 hover:bg-gray-800 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    onClick={handleSaveEdit}
+                    disabled={isSubmittingEdit || !editContent.trim()}
+                    className="px-4 py-1.5 rounded-full text-sm font-bold bg-brand text-brand-contrast hover:opacity-90 transition-opacity disabled:opacity-50"
+                  >
+                    {isSubmittingEdit ? 'Saving...' : 'Save'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <p className="mt-2 text-[15px] leading-relaxed whitespace-pre-wrap text-gray-100">
+                {post.content}
+              </p>
+            )
           )}
 
           {/* RENDER ORIGINAL POST (If Quote Repost) */}
@@ -235,14 +308,12 @@ export function Post({ post, index, onLike, onRepost, onComment, onDelete, activ
             </div>
           )}
 
-          {/* RENDER ATTACHED IMAGE */}
           {post.image && (
             <div className="mt-3 rounded-2xl overflow-hidden border border-gray-800">
               <img src={post.image} alt="Post attachment" className="w-full h-auto max-h-[500px] object-cover" />
             </div>
           )}
 
-          {/* RENDER TAGGED LOCATION */}
           {post.location && (
             <div className="flex items-center gap-1 mt-3 text-brand font-medium text-sm">
               <MapPin size={16} />
@@ -298,19 +369,19 @@ export function Post({ post, index, onLike, onRepost, onComment, onDelete, activ
                       initial={{ opacity: 0, scale: 0.9, y: 10 }}
                       animate={{ opacity: 1, scale: 1, y: 0 }}
                       exit={{ opacity: 0, scale: 0.9, y: 10 }}
-                      className="absolute bottom-full mb-2 left-0 w-44 bg-white dark:bg-gray-900/95 backdrop-blur-xl border border-gray-200 dark:border-gray-700/50 rounded-2xl shadow-2xl overflow-hidden z-50 p-1"
+                      className="absolute bottom-full mb-2 left-0 w-44 bg-white/10 dark:bg-gray-900/95 backdrop-blur-xl border border-gray-700/50 rounded-2xl shadow-2xl overflow-hidden z-50 p-1"
                     >
-                      <button onClick={() => shareToPlatform('whatsapp')} className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-xl transition-colors text-sm font-medium text-gray-700 dark:text-gray-200">
+                      <button onClick={() => shareToPlatform('whatsapp')} className="w-full flex items-center gap-3 px-4 py-2.5 dark:hover:bg-white/15 dark:text-gray-200 rounded-xl transition-colors text-sm font-medium ">
                         <MessageCircle size={16} className="text-green-500" /> WhatsApp
                       </button>
-                      <button onClick={() => shareToPlatform('telegram')} className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-xl transition-colors text-sm font-medium text-gray-700 dark:text-gray-200">
+                      <button onClick={() => shareToPlatform('telegram')} className="w-full flex items-center gap-3 px-4 py-2.5 dark:hover:bg-white/15 dark:text-gray-200 rounded-xl transition-colors text-sm font-medium ">
                         <Send size={16} className="text-blue-400" /> Telegram
                       </button>
-                      <button onClick={() => shareToPlatform('messenger')} className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-xl transition-colors text-sm font-medium text-gray-700 dark:text-gray-200">
+                      <button onClick={() => shareToPlatform('messenger')} className="w-full flex items-center gap-3 px-4 py-2.5 dark:hover:bg-white/15 dark:text-gray-200 rounded-xl transition-colors text-sm font-medium ">
                         <Share size={16} className="text-blue-600" /> Messenger
                       </button>
                       <hr className="my-1 border-gray-200 dark:border-gray-800" />
-                      <button onClick={() => shareToPlatform('copy')} className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-xl transition-colors text-sm font-medium text-gray-700 dark:text-gray-200">
+                      <button onClick={() => shareToPlatform('copy')} className="w-full flex items-center gap-3 px-4 py-2.5 dark:hover:bg-white/15 dark:text-gray-200 rounded-xl transition-colors text-sm font-medium ">
                         <LinkIcon size={16} className="text-gray-400" /> Copy Link
                       </button>
                     </motion.div>
@@ -391,7 +462,6 @@ export function Post({ post, index, onLike, onRepost, onComment, onDelete, activ
                         autoFocus
                      />
                      
-                     {/* Original Post Preview inside Quote Modal */}
                      <div className="mt-2 p-3 rounded-2xl border border-gray-100 dark:border-gray-800 opacity-60 scale-95 origin-top">
                         <div className="flex items-center gap-2 mb-1">
                            {post.author.avatar && (
