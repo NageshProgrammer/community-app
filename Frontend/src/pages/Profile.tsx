@@ -518,7 +518,7 @@ export function Profile() {
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
                   placeholder="Full name"
-                  className="w-full p-3 border border-gray-300 dark:border-gray-700 rounded-xl bg-white dark:bg-transparent text-black dark:text-gray-500 focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-all placeholder-gray-400"
+                  className="w-full p-3 border border-gray-300 dark:border-gray-700 rounded-xl bg-transparent text-white focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-all placeholder-gray-400"
                 />
               </div>
 
@@ -530,7 +530,7 @@ export function Profile() {
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   placeholder="Username"
-                  className="w-full p-3 border border-gray-300 dark:border-gray-700 rounded-xl bg-white dark:bg-transparent text-black dark:text-white focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-all placeholder-gray-400"
+                  className="w-full p-3 border border-gray-300 dark:border-gray-700 rounded-xl bg-transparent text-white focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-all placeholder-gray-400"
                 />
               </div>
 
@@ -542,7 +542,7 @@ export function Profile() {
                   value={bio}
                   onChange={(e) => setBio(e.target.value)}
                   placeholder="Bio"
-                  className="w-full p-3 border border-gray-300 dark:border-gray-700 rounded-xl bg-white dark:bg-transparent text-black dark:text-white focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-all resize-none placeholder-gray-400"
+                  className="w-full p-3 border border-gray-300 dark:border-gray-700 rounded-xl bg-transparent text-white focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-all resize-none placeholder-gray-400"
                   rows={3}
                 />
               </div>
@@ -555,7 +555,7 @@ export function Profile() {
                   value={website}
                   onChange={(e) => setWebsite(e.target.value)}
                   placeholder="Website URL"
-                  className="w-full p-3 border border-gray-300 dark:border-gray-700 rounded-xl bg-white dark:bg-transparent text-black dark:text-white focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-all placeholder-gray-400"
+                  className="w-full p-3 border border-gray-300 dark:border-gray-700 rounded-xl bg-transparent text-white focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-all placeholder-gray-400"
                 />
               </div>
 

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
-import { Send, ArrowLeft, MoreVertical, Image, Smile, Mic, Heart, Reply, X, UserMinus, ShieldCheck, LogOut, Plus, Search, Camera } from 'lucide-react';
+import { Send, ArrowLeft, MoreVertical, Image, Smile, Mic, Heart, Reply, X, UserMinus, ShieldCheck, LogOut, Plus, Search, Camera, Pencil, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../../context/AuthContext';
 import { io } from 'socket.io-client';
@@ -37,6 +37,11 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
   const [showEmojis, setShowEmojis] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [replyingTo, setReplyingTo] = useState<any | null>(null);
+  
+  // Edit States
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editContent, setEditContent] = useState('');
+
   const [showGroupInfo, setShowGroupInfo] = useState(false);
   const [groupParticipants, setGroupParticipants] = useState<any[]>([]);
   const [loadingParticipants, setLoadingParticipants] = useState(false);
@@ -236,6 +241,34 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
     }
   };
 
+  // Handle Edit Message
+  const handleEditMessage = async (messageId: string) => {
+    if (!editContent.trim()) {
+      setEditingMessageId(null);
+      return;
+    }
+
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/messages/${messageId}`, {
+        method: 'PATCH',
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-user-id': user?.id || '' 
+        },
+        body: JSON.stringify({ text: editContent.trim() })
+      });
+
+      if (response.ok) {
+        setMessages(prev => prev.map(m => m.id === messageId ? { ...m, text: editContent.trim(), is_edited: true } : m));
+        setEditingMessageId(null);
+      } else {
+        alert("Failed to edit message");
+      }
+    } catch (err) {
+      console.error('Error editing message:', err);
+    }
+  };
+
   // 4. Handle Image Upload
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -388,11 +421,16 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
             onClick={() => chat.isGroup && setShowGroupInfo(true)}
           >
             <div className="relative">
-              <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold ${chat.avatarColor} shadow-inner`}>
-                {chat.initials}
+              {/* FIX: Use avatar_url in the main chat header */}
+              <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold ${!chat.avatar_url ? chat.avatarColor : 'bg-gray-800'} shadow-inner overflow-hidden`}>
+                {chat.avatar_url ? (
+                  <img src={chat.avatar_url} alt={chat.sender} className="w-full h-full object-cover" />
+                ) : (
+                  chat.initials
+                )}
               </div>
               {!chat.isGroup && chat.isOnline && (
-                <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-transparent rounded-full shadow-sm" />
+                <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-[#121B22] rounded-full shadow-sm" />
               )}
             </div>
             <div className="min-w-0">
@@ -468,19 +506,51 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
                   </div>
                 )}
 
-                {msg.text && <p className="text-sm font-medium leading-relaxed">{msg.text}</p>}
+                {/* EDIT OR DISPLAY TEXT */}
+                {editingMessageId === msg.id ? (
+                  <div className="flex flex-col gap-2 mt-1 min-w-[200px]">
+                    <textarea
+                      value={editContent}
+                      onChange={(e) => setEditContent(e.target.value)}
+                      className={`w-full dark:bg-gray-700 bg-black/20 border border-black/10 rounded-xl p-2 text-sm outline-none resize-none ${isMe ? 'dark:text-white' : 'text-white'}`}
+                      autoFocus
+                      rows={2}
+                    />
+                    <div className="flex justify-end gap-2">
+                      <button onClick={() => setEditingMessageId(null)} className="p-1.5  dark:hover:bg-gray-300 rounded-full transition-colors">
+                        <X size={14} className='hover:text-red-400'/>
+                      </button>
+                      <button onClick={() => handleEditMessage(msg.id)} disabled={!editContent.trim()} className="p-1.5 dark:hover:bg-gray-300 rounded-full transition-colors disabled:opacity-50">
+                        <Check size={14} className='hover:text-green-400' />
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  msg.text && (
+                    <p className="text-sm font-medium leading-relaxed">
+                      {msg.text}
+                      {msg.is_edited && <span className="text-[10px] italic opacity-60 ml-2">(edited)</span>}
+                    </p>
+                  )
+                )}
                 
                 <div className="flex items-center justify-between gap-4 mt-1">
                   <p className={`text-[10px] font-semibold ${isMe ? 'opacity-60' : 'text-gray-500'}`}>
                     {new Date(msg.timestamp || msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </p>
                   
+                  {/* Action Icons (Hover triggers) */}
                   <div className="flex items-center gap-2">
-                    <button onClick={() => setReplyingTo(msg)} className="text-gray-500 opacity-0 group-hover:opacity-100 hover:text-brand transition-all">
-                      <Reply size={12} />
+                    {isMe && (msg.text || msg.image_url || msg.voice_url) && editingMessageId !== msg.id && (
+                      <button onClick={() => { setEditingMessageId(msg.id); setEditContent(msg.text || ''); }} className="text-gray-500 opacity-0 group-hover:opacity-100  transition-all" title="Edit Message">
+                        <Pencil size={12 } className='hover:text-yellow-400' />
+                      </button>
+                    )}
+                    <button onClick={() => setReplyingTo(msg)} className="text-gray-500 opacity-0 group-hover:opacity-100  transition-all" title="Reply">
+                      <Reply size={12} className='hover:text-blue-400' />
                     </button>
-                    <button onClick={() => toggleMessageLike(msg.id)} className={`transition-all duration-300 transform active:scale-150 ${msg.isLiked ? 'text-pink-500' : 'text-gray-500 opacity-0 group-hover:opacity-100'}`}>
-                      <Heart size={12} fill={msg.isLiked ? "currentColor" : "none"} />
+                    <button onClick={() => toggleMessageLike(msg.id)} className={`transition-all duration-300 transform active:scale-150 ${msg.isLiked ? 'text-pink-500' : 'text-gray-500 opacity-0 group-hover:opacity-100'}`} title="Like">
+                      <Heart size={12}  fill={msg.isLiked ? "currentColor" : "none"} className='hover:text-red-400' />
                     </button>
                   </div>
                 </div>

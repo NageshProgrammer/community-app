@@ -138,7 +138,7 @@ export default function Notifications() {
           {filteredNotifications.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 text-center">
               <div className="bg-gray-800/50 p-6 rounded-full mb-4">
-                <Bell className="w-10 h-10 text-gray-500" />
+                <Bell className="w-10 h-10 dark:text-gray-500" />
               </div>
               <h3 className="text-lg font-medium text-white">No notifications</h3>
               <p className="text-gray-500 mt-1 text-sm">You're all caught up!</p>
