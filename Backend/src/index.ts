@@ -46,9 +46,9 @@ const getNormalizedProfile = async (targetUserId?: string | null) => {
       .maybeSingle()
   ]);
 
-  const profile = profileResult.data || {};
-  const userRecord = userResult.data || {};
-  const metadata = userRecord.raw_user_meta_data || {};
+  const profile: any = profileResult.data || {};
+  const userRecord: any = userResult.data || {};
+  const metadata: any = userRecord.raw_user_meta_data || {};
 
   const username =
     profile.username ||
