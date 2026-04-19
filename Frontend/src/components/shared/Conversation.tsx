@@ -28,34 +28,6 @@ const COMMON_EMOJIS = [
   '😀', '😃', '😄', '😁', '😅', '😂', '🤣', '😊', '😇', '🙂', '🙃', '😉', '😌', '😍', '🥰', '😘', '😗', '😙', '😚', '😋', '😛', '😝', '😜', '🤪', '🤨', '🧐', '🤓', '😎', '🤩', '🥳', '😏', '😒', '😞', '😔', '😟', '😕', '🙁', '☹️', '😣', '😖', '😫', '😩', '🥺', '😢', '😭', '😤', '😠', '😡', '🤬', '🤯', '😳', '🥵', '🥶', '😱', '😨', '😰', '😥', '😓', '🤗', '🤔', '🤭', '🤫', '🤥', '😶', '😐', '😑', '😬', '🙄', '😯', '😦', '😧', '😮', '😲', '🥱', '😴', '🤤', '😪', '😵', '🤐', '🥴', '🤢', '🤮', '🤧', '😷', '🤒', '🤕', '🤑', '🤠', '😈', '👿', '👹', '👺', '🤡', '💩', '👻', '💀', '☠️', '👽', '👾', '🤖', '🎃', '😺', '😸', '😹', '😻', '😼', '😽', '🙀', '😿', '😾', '👋', '🤚', '🖐', '✋', '🖖', '👌', '🤏', '✌️', '🤞', '🤟', '🤘', '🤙', '👈', '👉', '👆', '🖕', '👇', '☝️', '👍', '👎', '✊', '👊', '🤛', '🤜', '👏', '🙌', '👐', '🤲', '🤝', '🙏', '✍️', '💅', '🤳', '💪', '🦾', '🦵', '🦿', '👣', '👂', '🦻', '👃', '🧠', '🦷', '🦴', '👀', '👁', '👅', '👄', '💋', '🩸', '❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍', '🤎', '💔', '❣️', '💕', '💞', '💓', '💗', '💖', '💘', '💝', '💟'
 ];
 
-const normalizeAuthor = (author: any) => {
-  if (Array.isArray(author)) {
-    return author[0] || null;
-  }
-
-  return author || null;
-};
-
-const normalizeReply = (reply: any) => {
-  if (!reply) return null;
-
-  const rawReply = Array.isArray(reply) ? reply[0] : reply;
-  if (!rawReply) return null;
-
-  return {
-    ...rawReply,
-    senderId: rawReply.senderId || rawReply.senderid,
-    author: normalizeAuthor(rawReply.author)
-  };
-};
-
-const normalizeMessage = (message: any) => ({
-  ...message,
-  senderId: message.senderId || message.senderid,
-  author: normalizeAuthor(message.author),
-  reply_to: normalizeReply(message.reply_to)
-});
-
 
 export default function Conversation({ chat, onBack }: ConversationProps) {
   const { user } = useAuth();
@@ -84,7 +56,6 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
   const groupAvatarInputRef = useRef<HTMLInputElement>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -93,11 +64,6 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
     const me = groupParticipants.find(p => p.id === user.id);
     return me?.isAdmin || false;
   }, [groupParticipants, user]);
-  const headerAvatarUrl = chat.isGroup ? (groupAvatar || chat.avatar_url) : chat.avatar_url;
-
-  useEffect(() => {
-    setGroupAvatar(chat.avatar_url || null);
-  }, [chat.avatar_url, chat.id]);
 
   // 1. Fetch History
   useEffect(() => {
@@ -109,7 +75,7 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
           headers: { 'x-user-id': user?.id || '' }
         });
         const data = await response.json();
-        setMessages((Array.isArray(data) ? data : []).map(normalizeMessage));
+        setMessages(data);
       } catch (err) {
         console.error('Error fetching messages:', err);
       }
@@ -119,9 +85,8 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
     socket.emit('join_room', chat.id);
 
     const handleNewMessage = (msg: any) => {
-      const normalizedMessage = normalizeMessage(msg);
-      if (normalizedMessage.senderId !== user?.id) {
-        setMessages(prev => [...prev, normalizedMessage]);
+      if (msg.senderId !== user?.id) {
+        setMessages(prev => [...prev, msg]);
       }
     };
 
@@ -282,7 +247,7 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
 
       if (response.ok) {
         const sentMsg = await response.json();
-        setMessages(prev => [...prev, normalizeMessage(sentMsg)]);
+        setMessages(prev => [...prev, sentMsg]);
         setReplyingTo(null);
       }
     } catch (err) {
@@ -471,9 +436,9 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
           >
             <div className="relative">
               {/* FIX: Use avatar_url in the main chat header */}
-              <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold ${!headerAvatarUrl ? chat.avatarColor : 'bg-gray-800'} shadow-inner overflow-hidden`}>
-                {headerAvatarUrl ? (
-                  <img src={headerAvatarUrl} alt={chat.sender} className="w-full h-full object-cover" />
+              <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold ${!chat.avatar_url ? chat.avatarColor : 'bg-gray-800'} shadow-inner overflow-hidden`}>
+                {chat.avatar_url ? (
+                  <img src={chat.avatar_url} alt={chat.sender} className="w-full h-full object-cover" />
                 ) : (
                   chat.initials
                 )}
@@ -505,7 +470,7 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
       >
         {messages.map((msg) => {
           const isMe = msg.senderId === user?.id;
-          const quote = msg.reply_to;
+          const quote = Array.isArray(msg.reply_to) ? msg.reply_to[0] : msg.reply_to;
 
           return (
             <motion.div
@@ -523,13 +488,13 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
                   <div className={`mb-2 p-2 rounded-lg border-l-4 text-[11px] min-w-[120px] ${isMe ? 'bg-black/30 border-brand' : 'bg-black/20 border-gray-500'
                     }`}>
                     {/* Name: Show always in Groups, or if it isn't "me" in Private */}
-                    {(chat.isGroup || quote.senderId !== user?.id) && (
+                    {(chat.isGroup || quote.senderid !== user?.id) && (
                       <p className={`font-bold mb-0.5 ${isMe ? 'text-brand' : 'text-gray-400'}`}>
-                        {quote.senderId === user?.id ? 'You' : (quote.author?.full_name || chat.sender)}
+                        {quote.senderid === user?.id ? 'You' : (quote.author?.full_name || chat.sender)}
                       </p>
                     )}
                     {/* Special case: If Private and its "You", show "You" anyway for clarity like Image 1 */}
-                    {!chat.isGroup && quote.senderId === user?.id && (
+                    {!chat.isGroup && quote.senderid === user?.id && (
                       <p className={`font-bold mb-0.5 text-brand`}>You</p>
                     )}
 
@@ -591,7 +556,7 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
                         <Pencil size={12 } className='hover:text-yellow-400' />
                       </button>
                     )}
-                    <button onClick={() => { setReplyingTo(msg); inputRef.current?.focus(); }} className="text-gray-500 opacity-0 group-hover:opacity-100  transition-all" title="Reply">
+                    <button onClick={() => setReplyingTo(msg)} className="text-gray-500 opacity-0 group-hover:opacity-100  transition-all" title="Reply">
                       <Reply size={12} className='hover:text-blue-400' />
                     </button>
                     <button onClick={() => toggleMessageLike(msg.id)} className={`transition-all duration-300 transform active:scale-150 ${msg.isLiked ? 'text-pink-500' : 'text-gray-500 opacity-0 group-hover:opacity-100'}`} title="Like">
@@ -609,10 +574,10 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
       <AnimatePresence>
         {replyingTo && (
           <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 10 }}
-            className="px-4 py-2 border-t border-gray-800 bg-gray-900/95 flex items-center justify-between gap-4 backdrop-blur-md"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="px-4 py-3 border-t border-gray-800 bg-gray-900/95 flex items-center justify-between gap-4 backdrop-blur-md"
           >
             <div className="flex-1 border-l-4 border-brand pl-3 py-1 bg-white/5 rounded-r-lg">
               <p className="text-[11px] text-brand font-bold mb-0.5">
@@ -636,14 +601,10 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
       {/* Input Area */}
       <div className="p-4 border-t border-gray-800 bg-transparent z-10">
         <div className="flex items-center gap-2 bg-gray-800 border border-gray-800 rounded-2xl px-4 py-2 shadow-inner">
-          <button type="button" disabled={uploading} onClick={() => fileInputRef.current?.click()} className={`text-gray-500 hover:text-white transition-colors ${uploading ? 'animate-pulse' : ''}`}>
+          <button type="button" disabled={uploading} onClick={() => fileInputRef.current?.click()} className={`text-gray-500 hover:text-brand transition-colors ${uploading ? 'animate-pulse' : ''}`}>
             <Image className="w-5 h-5" />
           </button>
-          <div 
-            role="button" 
-            onClick={() => setShowEmojis(!showEmojis)} 
-            className={`text-gray-500 hover:text-white transition-colors relative cursor-pointer ${showEmojis ? 'text-brand' : ''}`}
-          >
+          <button onClick={() => setShowEmojis(!showEmojis)} className={`text-gray-500 hover:text-brand transition-colors relative ${showEmojis ? 'text-brand' : ''}`}>
             <Smile className="w-5 h-5" />
 
             {/* Emoji Picker Popup */}
@@ -684,9 +645,8 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
                 </motion.div>
               )}
             </AnimatePresence>
-          </div>
+          </button>
           <input
-            ref={inputRef}
             type="text"
             placeholder={isRecording ? "Recording voice..." : uploading ? "Uploading..." : "Type a message..."}
             value={newMessage}
@@ -700,7 +660,7 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
               <Send className="w-4 h-4 ml-0.5" />
             </button>
           ) : (
-            <button onClick={isRecording ? stopRecording : startRecording} className={`p-2 rounded-full transition-all duration-300 ${isRecording ? 'bg-red-500 text-white animate-pulse' : 'text-gray-500 hover:text-white'}`}>
+            <button onClick={isRecording ? stopRecording : startRecording} className={`p-2 rounded-full transition-all duration-300 ${isRecording ? 'bg-red-500 text-white animate-pulse' : 'text-gray-500 hover:text-brand'}`}>
               <Mic className="w-5 h-5" />
             </button>
           )}

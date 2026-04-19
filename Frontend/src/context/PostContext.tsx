@@ -1,7 +1,6 @@
-import { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import type { ReactNode } from 'react';
 import { useAuth } from './AuthContext';
-import { useData } from './DataContext';
 import { supabase } from '../utils/supabase';
 
 export interface PostData {
@@ -184,16 +183,9 @@ export function PostProvider({ children }: { children: ReactNode }) {
     }
   }, [user]);
 
-  const { initialData } = useData();
-
   useEffect(() => {
-    if (initialData?.posts) {
-      setPosts(initialData.posts);
-      setLoading(false);
-    } else if (user?.id) {
-      fetchPosts();
-    }
-  }, [user?.id, fetchPosts, initialData?.posts]);
+    fetchPosts();
+  }, [fetchPosts]);
 
   const addPost = useCallback(
     async (
@@ -421,24 +413,24 @@ export function PostProvider({ children }: { children: ReactNode }) {
     [user],
   );
 
-  const value = useMemo(() => ({
-    posts,
-    addPost,
-    editPost,
-    toggleLike,
-    toggleRepost,
-    quoteRepost,
-    addComment,
-    getComments,
-    sharePost,
-    deletePost,
-    refreshPosts: fetchPosts,
-    loading,
-    error
-  }), [posts, loading, error, fetchPosts, addPost, editPost, toggleLike, toggleRepost, quoteRepost, addComment, getComments, deletePost, sharePost]);
-
   return (
-    <PostContext.Provider value={value}>
+    <PostContext.Provider
+      value={{
+        posts,
+        addPost,
+        editPost,
+        toggleLike,
+        toggleRepost,
+        quoteRepost,
+        addComment,
+        getComments,
+        sharePost,
+        deletePost,
+        refreshPosts: fetchPosts,
+        loading,
+        error,
+      }}
+    >
       {children}
     </PostContext.Provider>
   );

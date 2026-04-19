@@ -1,14 +1,15 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useEffect, useRef } from 'react';
-import { MessageCircle, Repeat, Heart, Share, MoreHorizontal, MapPin, Trash2, Link as LinkIcon, Send, Pencil, X } from 'lucide-react';
+import { MessageCircle, Repeat, Heart, Share, MoreHorizontal, MapPin, Trash2, Link as LinkIcon, Send, Pencil } from 'lucide-react';
 import { usePosts, type CommentData, type PostData } from '../../context/PostContext';
-import { Link, useSearchParams } from 'react-router-dom';
-import { useAuth } from '../../context/AuthContext';
+import { Link } from 'react-router-dom';
+import { useAuth } from '../../context/AuthContext'; 
 
 interface PostProps {
   post: PostData;
   index: number;
   onLike: () => void;
+  onRepost: () => void;
   onComment: (comment: string) => void;
   onDelete?: () => void; 
   onEdit?: (newContent: string) => Promise<void>; 
@@ -16,12 +17,12 @@ interface PostProps {
   setActiveDropdownId: (id: string | null) => void;
 }
 
-export function Post({ post, index, onLike, onComment, onDelete, onEdit, activeDropdownId, setActiveDropdownId }: PostProps) {
+export function Post({ post, index, onLike, onRepost, onComment, onDelete, onEdit, activeDropdownId, setActiveDropdownId }: PostProps) {
   const [commentText, setCommentText] = useState('');
   const [showCommentInput, setShowCommentInput] = useState(false);
   const [showQuoteModal, setShowQuoteModal] = useState(false);
   const [quoteText, setQuoteText] = useState('');
-  const [repostMenuOpen] = useState(false);
+  const [repostMenuOpen, setRepostMenuOpen] = useState(false);
   
   // Edit States
   const [isEditing, setIsEditing] = useState(false);
@@ -29,21 +30,19 @@ export function Post({ post, index, onLike, onComment, onDelete, onEdit, activeD
   const [isSubmittingEdit, setIsSubmittingEdit] = useState(false);
   
   const { getComments, quoteRepost } = usePosts();
-  const { user } = useAuth();
-  const [, setSearchParams] = useSearchParams();
-
+  const { user } = useAuth(); 
+  
   const [comments, setComments] = useState<CommentData[]>([]);
   const [loadingComments, setLoadingComments] = useState(false);
-
+  
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-  const isOwnPost = (user?.id === post.author?.id) || 
-                    (user?.id === post.author_id);
+ 
+  const isOwnPost = user?.id === post.author.id;
 
   const showOptions = activeDropdownId === post.id;
   const showShareOptions = activeDropdownId === post.id + '-share';
 
-  // FIX: Determine if this specific post's dropdown or share menu or repost menu is open
+  // FIX: Determine if this specific post needs to be pulled to the front
   const isAnyMenuOpen = showOptions || showShareOptions || repostMenuOpen;
 
   useEffect(() => {
@@ -83,6 +82,7 @@ export function Post({ post, index, onLike, onComment, onDelete, onEdit, activeD
     const url = `${window.location.origin}/community?shared=${post.id}`;
     navigator.clipboard.writeText(url);
     setActiveDropdownId(null);
+    alert("Link copied to clipboard!"); 
   };
 
   const handleToggleOptions = (e: React.MouseEvent) => {
@@ -247,9 +247,9 @@ export function Post({ post, index, onLike, onComment, onDelete, onEdit, activeD
           </div>
 
           {post.reposted_post_id && !post.content && (
-             <div className="flex items-center gap-2 mb-2 -mt-1 opacity-70">
-                <Repeat size={14} className="text-gray-400" />
-                <span className="text-[13px] text-gray-400 font-bold hover:underline cursor-pointer">{post.author.name} Reposted</span>
+             <div className="flex items-center gap-2 mb-1 -mt-1">
+                <Repeat size={12} className="text-gray-500" />
+                <span className="text-[12px] text-gray-500 font-bold uppercase tracking-wider">{post.author.name} Reposted</span>
              </div>
           )}
 
@@ -288,18 +288,12 @@ export function Post({ post, index, onLike, onComment, onDelete, onEdit, activeD
 
           {/* RENDER ORIGINAL POST (If Quote Repost) */}
           {post.original_post && (
-            <div 
-               onClick={(e) => {
-                  e.stopPropagation();
-                  setSearchParams({ shared: post.original_post!.id });
-               }}
-               className="mt-3 p-3 rounded-2xl border border-gray-800 bg-black/10 hover:bg-white/5 transition-colors cursor-pointer overflow-hidden group/quoted"
-            >
+            <div className="mt-3 p-3 rounded-2xl border border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors cursor-pointer overflow-hidden">
               <div className="flex items-center gap-2 mb-1">
                 {post.original_post.author.avatar && (
                   <img src={post.original_post.author.avatar} className="w-5 h-5 rounded-full" />
                 )}
-                <span className="text-sm font-bold text-white group-hover/quoted:underline">{post.original_post.author.name}</span>
+                <span className="text-sm font-bold text-white uppercase tracking-tight">{post.original_post.author.name}</span>
                 <span className="text-xs text-gray-500">@{post.original_post.author.handle}</span>
               </div>
               <p className="text-[14px] text-gray-300 line-clamp-3 leading-snug">
@@ -326,21 +320,39 @@ export function Post({ post, index, onLike, onComment, onDelete, onEdit, activeD
             </div>
           )}
 
-          {/* Action Buttons */}
-          <div className="flex justify-between mt-4 text-gray-400 max-w-md">
-            <ActionIcon icon={MessageCircle} count={post.comments} hoverColor="hover:text-blue-500" hoverBg="group-hover:bg-blue-500/10" activeBg="bg-blue-500/10" isActive={showCommentInput} activeColor="text-blue-500" onClick={() => setShowCommentInput((prev) => !prev)} />
+            {/* Action Buttons */}
+            <div className="flex justify-between mt-4 text-gray-400 max-w-md">
+              <ActionIcon icon={MessageCircle} count={post.comments} hoverColor="hover:text-blue-500" hoverBg="group-hover:bg-blue-500/10" activeBg="bg-blue-500/10" isActive={showCommentInput} activeColor="text-blue-500" onClick={() => setShowCommentInput((prev) => !prev)} />
 
-            <div className="relative">
-              <ActionIcon 
-                icon={Repeat} 
-                count={post.reposts} 
-                hoverColor="hover:text-green-500" 
-                hoverBg="group-hover:bg-green-500/10" 
-                activeBg="bg-green-500/10" 
-                isActive={post.isReposted ?? false} 
-                activeColor="text-green-500" 
-                onClick={() => setShowQuoteModal(true)} 
-              />
+              <div className="relative">
+              <ActionIcon icon={Repeat} count={post.reposts} hoverColor="hover:text-green-500" hoverBg="group-hover:bg-green-500/10" activeBg="bg-green-500/10" isActive={post.isReposted ?? false} activeColor="text-green-500" onClick={() => setRepostMenuOpen(!repostMenuOpen)} />
+
+              <AnimatePresence>
+                {repostMenuOpen && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setRepostMenuOpen(false)} />
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.9, y: 10 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.9, y: 10 }}
+                      className="absolute bottom-full mb-2 left-0 w-44 bg-white dark:bg-[#15202B]/95 backdrop-blur-xl border border-gray-200 dark:border-gray-700/50 rounded-2xl shadow-2xl overflow-hidden z-50 p-1"
+                    >
+                      <button 
+                        onClick={() => { onRepost(); setRepostMenuOpen(false); }}
+                        className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-100 dark:hover:bg-white/5 rounded-xl transition-colors text-sm font-bold text-gray-700 dark:text-gray-200"
+                      >
+                        <Repeat size={18} /> {post.isReposted ? 'Undo Repost' : 'Repost'}
+                      </button>
+                      <button 
+                        onClick={() => { setShowQuoteModal(true); setRepostMenuOpen(false); }}
+                        className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-100 dark:hover:bg-white/5 rounded-xl transition-colors text-sm font-bold text-gray-700 dark:text-gray-200"
+                      >
+                        <MessageCircle size={18} /> Quote
+                      </button>
+                    </motion.div>
+                  </>
+                )}
+              </AnimatePresence>
             </div>
             <ActionIcon icon={Heart} count={post.likes} hoverColor="hover:text-pink-500" hoverBg="group-hover:bg-pink-500/10" activeBg="bg-pink-500/10" isActive={post.isLiked ?? false} activeColor="text-pink-500" fillIcon={post.isLiked ?? false} onClick={onLike} />
 
@@ -432,46 +444,45 @@ export function Post({ post, index, onLike, onComment, onDelete, onEdit, activeD
           <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowQuoteModal(false)} className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
             <motion.div initial={{ opacity: 0, scale: 0.9, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.9, y: 20 }} className="relative w-full max-w-lg bg-white dark:bg-[#15202B] rounded-3xl shadow-2xl overflow-hidden border border-gray-200 dark:border-gray-800 flex flex-col p-4">
-               <div className="flex justify-between items-center mb-6">
-                  <h3 className="text-xl font-bold text-white">Repost</h3>
-                  <button onClick={() => setShowQuoteModal(false)} className="p-2 hover:bg-gray-800 rounded-full transition-colors text-gray-400 hover:text-white"><X size={20} /></button>
+               <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-xl font-bold dark:text-white">Quote Post</h3>
+                  <button onClick={() => setShowQuoteModal(false)} className="p-2 hover:bg-gray-100 dark:hover:bg-white/5 rounded-full transition-colors text-gray-500"><Trash2 size={20} /></button>
                </div>
                
                <div className="flex gap-4">
+                  <img src={user?.user_metadata?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.id}`} className="w-12 h-12 rounded-full hidden sm:block" />
                   <div className="flex-1">
                      <textarea
                         value={quoteText}
                         onChange={(e) => setQuoteText(e.target.value)}
-                        placeholder="Add a comment... (optional)"
-                        className="w-full bg-transparent border-none text-xl text-white focus:outline-none resize-none min-h-[120px]"
+                        placeholder="Add a comment..."
+                        className="w-full bg-transparent border-none text-xl dark:text-white focus:outline-none resize-none min-h-[100px]"
                         autoFocus
                      />
                      
-                     {/* Original Post Preview inside Repost Modal */}
-                     <div className="mt-4 p-4 rounded-2xl border border-gray-800 bg-black/20 overflow-hidden">
-                        <div className="flex items-center gap-2 mb-2">
+                     <div className="mt-2 p-3 rounded-2xl border border-gray-100 dark:border-gray-800 opacity-60 scale-95 origin-top">
+                        <div className="flex items-center gap-2 mb-1">
                            {post.author.avatar && (
                              <img src={post.author.avatar} className="w-5 h-5 rounded-full" />
                            )}
-                           <span className="text-sm font-bold text-white">{post.author.name}</span>
+                           <span className="text-sm font-bold text-white tracking-tight">{post.author.name}</span>
                            <span className="text-xs text-gray-500">@{post.author.handle}</span>
                         </div>
-                        <p className="text-[14px] text-gray-300 line-clamp-3 mb-2">{post.content}</p>
-                        {post.image && (
-                          <img src={post.image} className="w-full h-32 object-cover rounded-xl" />
-                        )}
+                        <p className="text-[14px] text-gray-300 line-clamp-2">{post.content}</p>
                      </div>
                   </div>
                </div>
                
-               <div className="mt-6 flex justify-end">
+               <div className="mt-4 flex justify-end">
                   <button
                     onClick={async () => {
+                       if (!quoteText.trim()) return;
                        await quoteRepost(post.id, quoteText.trim());
                        setQuoteText('');
                        setShowQuoteModal(false);
+                       alert("Post shared successfully!");
                     }}
-                    className={`px-8 py-2.5 rounded-full font-bold transition-all bg-brand text-brand-contrast hover:opacity-90`}
+                    className={`px-6 py-2 rounded-full font-bold transition-all ${quoteText.trim() ? 'bg-brand text-brand-contrast' : 'bg-brand/50 text-brand-contrast/50 cursor-not-allowed'}`}
                   >
                     Post
                   </button>
