@@ -12,6 +12,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import Conversation from '../components/shared/Conversation';
 import { useSocial } from '../context/SocialContext';
 import { useAuth } from '../context/AuthContext';
+import { useNotification } from '../context/NotificationContext';
 import { useData } from '../context/DataContext';
 import { supabase } from '../utils/supabase';
 
@@ -29,55 +30,9 @@ type Chat = {
   isGroup?: boolean;
 };
 
-const formatChatTimestamp = (value?: string) => {
-  if (!value) return 'Now';
-
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return 'Now';
-  }
-
-  return parsed.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-};
-
-const resolveChatAvatarUrl = (convo: any, isGroup: boolean) => {
-  if (isGroup) {
-    return convo.avatar_url || convo.avatarurl || convo.group_avatar_url || convo.groupAvatarUrl;
-  }
-
-  const profile = convo.profile || convo.user || convo.other_user || convo.otherUser;
-  return (
-    profile?.avatar_url ||
-    profile?.avatar ||
-    convo.avatar_url ||
-    convo.avatarurl ||
-    convo.other_user_avatar_url ||
-    convo.otherUserAvatarUrl
-  );
-};
-
-const mapConversationToChat = (convo: any, currentUserId?: string): Chat => {
-  const isGroup = Boolean(convo.is_group);
-  const profile = convo.profile;
-  const sender = isGroup ? (convo.name || 'Group') : (profile?.full_name || profile?.username || 'User');
-
-  return {
-    id: convo.id,
-    sender,
-    avatarColor: 'bg-brand',
-    initials: sender.substring(0, 1).toUpperCase(),
-    avatar_url: resolveChatAvatarUrl(convo, isGroup),
-    lastMessage: convo.lastmessage || convo.lastMessage || convo.last_message || 'No messages yet',
-    timestamp: formatChatTimestamp(convo.updatedAt || convo.updatedat || convo.updated_at),
-    unreadCount: convo.unreadCount || 0,
-    isOnline: true,
-    targetUserId: isGroup ? undefined : convo.participants?.find((p: string) => p !== currentUserId),
-    isGroup
-  };
-};
-
 export default function Messages() {
   const { user } = useAuth();
+  const { showNotification } = useNotification();
   const location = useLocation();
   const navigate = useNavigate();
   const [chats, setChats] = useState<Chat[]>([]);
@@ -105,26 +60,35 @@ export default function Messages() {
     if (!user) return;
 
     if (initialData?.conversations) {
-      setChats(prev => {
-        const previousById = new Map(prev.map(chat => [chat.id, chat]));
-        return (initialData.conversations || []).map((convo: any) => {
-          const mappedChat = mapConversationToChat(convo, user.id);
-          const existingChat = previousById.get(mappedChat.id);
-
-          return existingChat?.avatar_url && !mappedChat.avatar_url
-            ? { ...mappedChat, avatar_url: existingChat.avatar_url }
-            : mappedChat;
-        });
+      const enrichedChats = (initialData.conversations || []).map((convo: any) => {
+        const isGroup = convo.is_group; 
+        const profile = convo.profile;
+        const targetId = convo.participants?.find((p: string) => p !== user?.id);
+        
+        return {
+          id: convo.id,
+          sender: isGroup ? (convo.name || "Group") : (profile?.full_name || profile?.username || 'User'),
+          avatarColor: 'bg-brand',
+          initials: (isGroup ? (convo.name || "G") : (profile?.full_name || 'U')).substring(0, 1).toUpperCase(),
+          avatar_url: isGroup ? convo.avatar_url : profile?.avatar_url,
+          lastMessage: convo.lastmessage || convo.lastMessage || 'No messages yet',
+          timestamp: new Date(convo.updatedAt || convo.updatedat).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          unreadCount: convo.unreadCount || 0,
+          isOnline: true,
+          targetUserId: targetId,
+          isGroup: isGroup
+        };
       });
+      setChats(enrichedChats);
       setLoading(false);
+      return;
     }
 
+    const controller = new AbortController();
+
     const fetchConversations = async () => {
-      const controller = new AbortController();
+      setLoading(true);
       const timeoutId = setTimeout(() => controller.abort(), 6000); // 6s timeout rescue
-      if (!initialData?.conversations) {
-        setLoading(true);
-      }
 
       try {
         const BACKEND_URL = (import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || 'http://localhost:10000').replace(/\/$/, '');
@@ -138,81 +102,44 @@ export default function Messages() {
         
         const data = await response.json();
         
-        setChats(prev => {
-          const previousById = new Map(prev.map(chat => [chat.id, chat]));
-          return (data || []).map((convo: any) => {
-            const mappedChat = mapConversationToChat(convo, user.id);
-            const existingChat = previousById.get(mappedChat.id);
-
-            return existingChat?.avatar_url && !mappedChat.avatar_url
-              ? { ...mappedChat, avatar_url: existingChat.avatar_url }
-              : mappedChat;
-          });
+        const enrichedChats = (data || []).map((convo: any) => {
+          const isGroup = convo.is_group; 
+          const profile = convo.profile;
+          const targetId = convo.participants.find((p: string) => p !== user.id);
+          
+          return {
+            id: convo.id,
+            sender: isGroup ? (convo.name || "Group") : (profile?.full_name || profile?.username || 'User'),
+            avatarColor: 'bg-brand',
+            initials: (isGroup ? (convo.name || "G") : (profile?.full_name || 'U')).substring(0, 1).toUpperCase(),
+            avatar_url: isGroup 
+              ? (convo.photo_url || convo.avatar_url || convo.avatarUrl) 
+              : (profile?.avatar_url || profile?.avatarUrl || profile?.photo_url),
+            lastMessage: convo.lastMessage || 'No messages yet',
+            timestamp: new Date(convo.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            unreadCount: convo.unreadCount || 0,
+            isOnline: true,
+            targetUserId: targetId,
+            isGroup: isGroup
+          };
         });
+
+        setChats(enrichedChats);
       } catch (err) {
+        if ((err as any).name === 'AbortError') return;
         console.error('Error fetching conversations:', err);
+        if (chats.length === 0) setChats([]); 
       } finally {
-        clearTimeout(timeoutId);
         setLoading(false);
       }
     };
 
-    fetchConversations();
-  }, [user, initialData]);
+    if (selectedChatId === null) {
+      fetchConversations();
+    }
 
-  useEffect(() => {
-    if (!user || chats.length === 0) return;
-
-    const missingAvatarUserIds = [...new Set(
-      chats
-        .filter(chat => !chat.isGroup && !chat.avatar_url && chat.targetUserId)
-        .map(chat => chat.targetUserId as string)
-    )];
-
-    if (missingAvatarUserIds.length === 0) return;
-
-    const hydrateMissingAvatars = async () => {
-      try {
-        const { data, error } = await supabase
-          .from('profiles')
-          .select('id, avatar_url, full_name, username')
-          .in('id', missingAvatarUserIds);
-
-        if (error) throw error;
-
-        const profilesById = new Map((data || []).map(profile => [profile.id, profile]));
-
-        setChats(prev => {
-          let hasChanges = false;
-
-          const nextChats = prev.map(chat => {
-            if (chat.isGroup || chat.avatar_url || !chat.targetUserId) {
-              return chat;
-            }
-
-            const profile = profilesById.get(chat.targetUserId);
-            if (!profile?.avatar_url) {
-              return chat;
-            }
-
-            hasChanges = true;
-            return {
-              ...chat,
-              avatar_url: profile.avatar_url,
-              sender: chat.sender === 'User' ? (profile.full_name || profile.username || chat.sender) : chat.sender,
-              initials: (profile.full_name || profile.username || chat.sender).substring(0, 1).toUpperCase()
-            };
-          });
-
-          return hasChanges ? nextChats : prev;
-        });
-      } catch (err) {
-        console.error('Error hydrating missing message avatars:', err);
-      }
-    };
-
-    hydrateMissingAvatars();
-  }, [user, chats]);
+    return () => controller.abort();
+  }, [user, initialData, selectedChatId]);
 
   const initializingChat = useRef(false);
 
@@ -248,7 +175,7 @@ export default function Messages() {
              data = await createRes.json();
              
              if (!createRes.ok) {
-               alert(data.details || 'Database blocked chat. Please run the SQL migration.');
+               showNotification(data.details || 'Database blocked chat. Please run the SQL migration.', 'error');
                return;
              }
           } else {
@@ -259,15 +186,17 @@ export default function Messages() {
             setSelectedChatId(data.id);
             setChats(prev => {
               if (prev.find(c => c.id === data.id)) return prev;
-              return [
-                mapConversationToChat({
-                  ...data,
-                  updatedAt: data.updatedAt || data.updatedat || new Date().toISOString(),
-                  unreadCount: 0,
-                  lastMessage: data.lastMessage || 'Starting...'
-                }, user.id),
-                ...prev
-              ];
+              return [{
+                id: data.id,
+                sender: 'New Chat',
+                avatarColor: 'bg-brand',
+                initials: 'N',
+                lastMessage: 'Starting...',
+                timestamp: 'Now',
+                unreadCount: 0,
+                isOnline: true,
+                targetUserId: targetUserId
+              }, ...prev];
             });
           }
         } catch (err) {
@@ -355,7 +284,7 @@ export default function Messages() {
       }
     } catch (err) {
       console.error('Error creating group:', err);
-      alert('Failed to create group');
+      showNotification('Failed to create group', 'error');
     } finally {
       setCreatingGroup(false);
     }
@@ -371,8 +300,8 @@ export default function Messages() {
 
   const filteredFollowers = useMemo(() => {
     return followingList.filter(u => 
-      (u.full_name || '').toLowerCase().includes(followerSearch.toLowerCase()) ||
-      (u.username || '').toLowerCase().includes(followerSearch.toLowerCase())
+      u.full_name.toLowerCase().includes(followerSearch.toLowerCase()) ||
+      u.username.toLowerCase().includes(followerSearch.toLowerCase())
     );
   }, [followingList, followerSearch]);
 
@@ -545,7 +474,7 @@ export default function Messages() {
                   >
                     {/* Avatar with Online Status */}
                     <div className="relative flex-shrink-0">
-                      <div className={`w-12 h-12 rounded-full flex items-center justify-center text-brand-contrast font-bold text-lg overflow-hidden ${chat.avatar_url ? 'bg-gray-800' : chat.avatarColor}`}>
+                      <div className={`w-12 h-12 rounded-full flex items-center justify-center text-brand-contrast font-bold text-lg ${!chat.avatar_url ? chat.avatarColor : 'bg-gray-800'} overflow-hidden`}>
                         {chat.avatar_url ? (
                           <img src={chat.avatar_url} alt={chat.sender} className="w-full h-full object-cover" />
                         ) : (

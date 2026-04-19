@@ -30,58 +30,6 @@ const getUserId = (req: express.Request) => req.headers['x-user-id'] as string;
 const bootstrapCache = new Map<string, { data: any, timestamp: number }>();
 const CACHE_TTL = 30000; // 30 seconds
 
-const getNormalizedProfile = async (targetUserId?: string | null) => {
-  if (!targetUserId) return null;
-
-  const [profileResult, userResult] = await Promise.all([
-    supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', targetUserId)
-      .maybeSingle(),
-    supabase
-      .from('user')
-      .select('id, full_name, avatar_url, raw_user_meta_data')
-      .eq('id', targetUserId)
-      .maybeSingle()
-  ]);
-
-  const profile: any = profileResult.data || {};
-  const userRecord: any = userResult.data || {};
-  const metadata: any = userRecord.raw_user_meta_data || {};
-
-  const username =
-    profile.username ||
-    metadata.username ||
-    metadata.user_name ||
-    metadata.preferred_username ||
-    (typeof metadata.email === 'string' ? metadata.email.split('@')[0] : null) ||
-    targetUserId.substring(0, 5);
-
-  const full_name =
-    profile.full_name ||
-    userRecord.full_name ||
-    metadata.full_name ||
-    metadata.name ||
-    username ||
-    'User';
-
-  const avatar_url =
-    profile.avatar_url ||
-    userRecord.avatar_url ||
-    metadata.avatar_url ||
-    metadata.picture ||
-    `https://api.dicebear.com/7.x/avataaars/svg?seed=${targetUserId}`;
-
-  return {
-    ...profile,
-    id: targetUserId,
-    username,
-    full_name,
-    avatar_url
-  };
-};
-
 // ===== BOOTSTRAP API (The "Ultimate Reduction" Fix) =====
 app.get('/api/bootstrap', async (req, res) => {
   const userId = getUserId(req);
@@ -110,18 +58,14 @@ app.get('/api/bootstrap', async (req, res) => {
 
     // 1. Enrich Conversations
     const conversations = await Promise.all((convRes.data || []).map(async (convo: any) => {
-      const otherParticipantId = !convo.is_group
-        ? convo.participants?.find((p: string) => p !== userId)
-        : null;
-
       const [countRes, otherProfile] = await Promise.all([
         supabase.from('messages').select('id', { count: 'exact', head: true }).eq('conversationid', convo.id).eq('isread', false).neq('senderid', userId),
-        !convo.is_group ? getNormalizedProfile(otherParticipantId) : Promise.resolve(null)
+        !convo.is_group ? supabase.from('profiles').select('*').eq('id', convo.participants.find((p: string) => p !== userId)).maybeSingle() : Promise.resolve({ data: null })
       ]);
       return {
         ...convo,
         unreadCount: countRes.count || 0,
-        profile: otherProfile,
+        profile: otherProfile.data,
         updatedAt: convo.updatedat || convo.updated_at,
         lastMessage: convo.lastmessage || convo.last_message
       };
@@ -206,10 +150,6 @@ app.get('/api/conversations', async (req, res) => {
 
     const enrichedConvos = await Promise.all((convos || []).map(async (convo) => {
       try {
-        const otherParticipantId = !convo.is_group
-          ? convo.participants?.find((p: string) => p !== userId) || null
-          : null;
-
         const [countResult, profileResult] = await Promise.all([
           supabase
             .from('messages')
@@ -218,15 +158,17 @@ app.get('/api/conversations', async (req, res) => {
             .eq('isread', false)
             .neq('senderid', userId),
 
-          !convo.is_group
-            ? getNormalizedProfile(otherParticipantId)
-            : Promise.resolve(null)
+          !convo.is_group ? supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', convo.participants?.find((p: string) => p !== userId) || '')
+            .single() : Promise.resolve({ data: null })
         ]);
 
         return {
           ...convo,
           unreadCount: countResult.count || 0,
-          profile: profileResult,
+          profile: profileResult.data,
           updatedAt: convo.updatedat || convo.updated_at,
           lastMessage: convo.lastmessage || convo.last_message
         };
@@ -259,11 +201,8 @@ app.get('/api/conversations/with/:targetUserId', async (req, res) => {
     if (error) throw error;
     if (!existing) return res.status(404).json({ error: 'Not found' });
 
-    const profile = await getNormalizedProfile(targetUserId);
-
     res.json({
       ...existing,
-      profile,
       updatedAt: existing.updatedat,
       lastMessage: existing.lastmessage
     });
@@ -292,11 +231,8 @@ app.post('/api/conversations', async (req, res) => {
         .maybeSingle();
 
       if (existing) {
-        const profile = await getNormalizedProfile(targetUserId);
-
         return res.json({
           ...existing,
-          profile,
           unreadCount: 0,
           updatedAt: existing.updatedat || existing.updated_at,
           lastMessage: existing.lastmessage || existing.last_message
@@ -330,11 +266,8 @@ app.post('/api/conversations', async (req, res) => {
         });
       }
 
-      const profile = await getNormalizedProfile(targetUserId);
-
       return res.json({
         ...newConvo,
-        profile,
         unreadCount: 0,
         updatedAt: newConvo.updatedat,
         lastMessage: 'New Chat'
@@ -512,9 +445,6 @@ app.post('/api/conversations/:id/action', async (req, res) => {
 
 const MESSAGE_QUERY = `
   *,
-  author:profiles!senderid (
-    full_name
-  ),
   reply_to:messages!reply_to_id (
     text,
     senderid,
@@ -531,7 +461,7 @@ app.get('/api/messages/:conversationId', async (req, res) => {
   try {
     const { data: messages, error } = await supabase
       .from('messages')
-      .select(MESSAGE_QUERY)
+      .select('*, reply_to:messages!reply_to_id(*)')
       .eq('conversationid', conversationId)
       .order('timestamp', { ascending: false })
       .range(0, 49); // Keep pagination to save IO

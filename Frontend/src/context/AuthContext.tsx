@@ -23,57 +23,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const ensureProfile = async (user: User) => {
-      const metadata = user.user_metadata || {};
-      const resolvedAvatarUrl =
-        metadata.avatar_url ||
-        metadata.picture ||
-        `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.id}`;
-      const username = metadata.username || user.email?.split('@')[0] || `user_${user.id.substring(0, 5)}`;
-      const full_name = metadata.full_name || metadata.name || username;
-
       const { data: profile } = await supabase
         .from('profiles')
-        .select('id, avatar_url, username, full_name')
+        .select('id')
         .eq('id', user.id)
         .maybeSingle();
 
       if (!profile) {
+        const metadata = user.user_metadata || {};
+        const username = metadata.username || user.email?.split('@')[0] || `user_${user.id.substring(0, 5)}`;
+        const full_name = metadata.full_name || username;
+
         await supabase.from('profiles').insert({
           id: user.id,
           username,
           full_name,
-          avatar_url: resolvedAvatarUrl,
+          avatar_url: metadata.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.id}`,
         });
-      } else if (!profile.avatar_url || !profile.full_name || !profile.username) {
-        await supabase.from('profiles').update({
-          avatar_url: profile.avatar_url || resolvedAvatarUrl,
-          full_name: profile.full_name || full_name,
-          username: profile.username || username
-        }).eq('id', user.id);
       }
 
       // Ensure data in dedicated 'user' table as well
       const { data: existingUser } = await supabase
         .from('user')
-        .select('id, avatar_url, full_name')
+        .select('id')
         .eq('id', user.id)
         .maybeSingle();
 
       if (!existingUser) {
+        const metadata = user.user_metadata || {};
         await supabase.from('user').insert({
           id: user.id,
           email: user.email,
-          full_name,
-          avatar_url: resolvedAvatarUrl,
+          full_name: metadata.full_name,
+          avatar_url: metadata.avatar_url,
           provider: user.app_metadata.provider || 'google',
           raw_user_meta_data: metadata // This stores the complete Google JSON
         });
-      } else if (!existingUser.avatar_url || !existingUser.full_name) {
-        await supabase.from('user').update({
-          avatar_url: existingUser.avatar_url || resolvedAvatarUrl,
-          full_name: existingUser.full_name || full_name,
-          raw_user_meta_data: metadata
-        }).eq('id', user.id);
       }
     };
 

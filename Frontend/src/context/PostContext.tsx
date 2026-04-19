@@ -51,7 +51,7 @@ interface PostContextType {
   editPost: (postId: string, newContent: string) => Promise<void>;
   toggleLike: (postId: string) => Promise<void>;
   toggleRepost: (postId: string) => Promise<void>;
-  quoteRepost: (postId: string, content: string) => Promise<void>;
+  quoteRepost: (postId: string, content: string, image?: string | null, location?: string | null) => Promise<void>;
   addComment: (postId: string, content: string) => Promise<void>;
   getComments: (postId: string) => Promise<CommentData[]>;
   sharePost: (postId: string) => Promise<void>;
@@ -325,9 +325,9 @@ export function PostProvider({ children }: { children: ReactNode }) {
   );
 
   const quoteRepost = useCallback(
-    async (postId: string, content: string) => {
+    async (postId: string, content: string, image?: string | null, location?: string | null) => {
       if (!user) return;
-      await addPost(content, user.id, null, null, postId);
+      await addPost(content, user.id, image, location, postId);
     },
     [user, addPost],
   );

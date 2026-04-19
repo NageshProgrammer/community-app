@@ -1,9 +1,11 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useEffect, useRef } from 'react';
-import { MessageCircle, Repeat, Heart, Share, MoreHorizontal, MapPin, Trash2, Link as LinkIcon, Send, Pencil } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { MessageCircle, Repeat, Heart, Share, MoreHorizontal, MapPin, Trash2, Link as LinkIcon, Send, Pencil, Smile, Image, Globe } from 'lucide-react';
 import { usePosts, type CommentData, type PostData } from '../../context/PostContext';
 import { Link } from 'react-router-dom';
-import { useAuth } from '../../context/AuthContext'; 
+import { useAuth } from '../../context/AuthContext';
+import { useNotification } from '../../context/NotificationContext';
 
 interface PostProps {
   post: PostData;
@@ -11,32 +13,57 @@ interface PostProps {
   onLike: () => void;
   onRepost: () => void;
   onComment: (comment: string) => void;
-  onDelete?: () => void; 
-  onEdit?: (newContent: string) => Promise<void>; 
+  onDelete?: () => void;
+  onEdit?: (newContent: string) => Promise<void>;
   activeDropdownId: string | null;
   setActiveDropdownId: (id: string | null) => void;
 }
 
 export function Post({ post, index, onLike, onRepost, onComment, onDelete, onEdit, activeDropdownId, setActiveDropdownId }: PostProps) {
+  const { showNotification } = useNotification();
   const [commentText, setCommentText] = useState('');
   const [showCommentInput, setShowCommentInput] = useState(false);
   const [showQuoteModal, setShowQuoteModal] = useState(false);
   const [quoteText, setQuoteText] = useState('');
   const [repostMenuOpen, setRepostMenuOpen] = useState(false);
-  
+  const [quoteImage, setQuoteImage] = useState<string | null>(null);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const emojis = ['😊', '😂', '🔥', '🙌', '💯', '✨', '👀', '🤔', '❤️', '👍'];
+
+  const handleLocation = () => {
+    if ("geolocation" in navigator) {
+      navigator.geolocation.getCurrentPosition((position) => {
+        const loc = `📍 ${position.coords.latitude.toFixed(2)}, ${position.coords.longitude.toFixed(2)}`;
+        setQuoteText(prev => prev + " " + loc);
+      }, (err) => {
+        showNotification("Could not get location: " + err.message, 'error');
+      });
+    }
+  };
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const url = URL.createObjectURL(file);
+      setQuoteImage(url);
+    }
+  };
+
   // Edit States
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState('');
   const [isSubmittingEdit, setIsSubmittingEdit] = useState(false);
-  
+
   const { getComments, quoteRepost } = usePosts();
-  const { user } = useAuth(); 
-  
+  const { user } = useAuth();
+
   const [comments, setComments] = useState<CommentData[]>([]);
   const [loadingComments, setLoadingComments] = useState(false);
-  
+
   const textareaRef = useRef<HTMLTextAreaElement>(null);
- 
+
   const isOwnPost = user?.id === post.author.id;
 
   const showOptions = activeDropdownId === post.id;
@@ -82,7 +109,7 @@ export function Post({ post, index, onLike, onRepost, onComment, onDelete, onEdi
     const url = `${window.location.origin}/community?shared=${post.id}`;
     navigator.clipboard.writeText(url);
     setActiveDropdownId(null);
-    alert("Link copied to clipboard!"); 
+    showNotification("Link copied to clipboard!", 'success');
   };
 
   const handleToggleOptions = (e: React.MouseEvent) => {
@@ -90,7 +117,7 @@ export function Post({ post, index, onLike, onRepost, onComment, onDelete, onEdi
     if (showOptions) {
       setActiveDropdownId(null);
     } else {
-      setActiveDropdownId(post.id); 
+      setActiveDropdownId(post.id);
     }
   };
 
@@ -105,14 +132,14 @@ export function Post({ post, index, onLike, onRepost, onComment, onDelete, onEdi
   // Edit Logic
   const handleInitiateEdit = (e: React.MouseEvent) => {
     e.stopPropagation();
-    
+
     // Check if 5 minutes have passed
     const postTime = new Date(post.created_at).getTime();
     const currentTime = new Date().getTime();
     const diffInMinutes = (currentTime - postTime) / (1000 * 60);
 
     if (diffInMinutes > 5) {
-      alert("Posts cannot be edited after 5 minutes of being published.");
+      showNotification("Posts cannot be edited after 5 minutes of being published.", 'warning');
     } else {
       setEditContent(post.content);
       setIsEditing(true);
@@ -125,13 +152,13 @@ export function Post({ post, index, onLike, onRepost, onComment, onDelete, onEdi
       setIsEditing(false);
       return;
     }
-    
+
     setIsSubmittingEdit(true);
     try {
       if (onEdit) await onEdit(editContent.trim());
       setIsEditing(false);
     } catch (error) {
-      alert("Failed to edit post. Please try again.");
+      showNotification("Failed to edit post. Please try again.", 'error');
     } finally {
       setIsSubmittingEdit(false);
     }
@@ -164,7 +191,7 @@ export function Post({ post, index, onLike, onRepost, onComment, onDelete, onEdi
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.95 }}
       transition={{ duration: 0.4, delay: index * 0.1 }}
-      className={`p-4 border-b border-gray-800 hover:bg-gray-800 transition-colors relative ${isAnyMenuOpen ? 'z-50' : 'z-10'}`}
+      className={`p-4 border-b border-gray-100 dark:border-[rgb(47,51,54)] hover:bg-black/5 dark:hover:bg-white/[0.03] transition-colors relative ${isAnyMenuOpen ? 'z-50' : 'z-10'}`}
     >
       <div className="flex gap-4">
         {/* Avatar */}
@@ -225,13 +252,13 @@ export function Post({ post, index, onLike, onRepost, onComment, onDelete, onEdi
 
                       {isOwnPost && (
                         <>
-                          <button 
+                          <button
                             onClick={handleInitiateEdit}
                             className="w-full text-left px-4 py-3  cursor-pointer hover:bg-white/5 dark:text-white text-sm font-medium transition-colors flex items-center gap-3 group"
                           >
                             <Pencil size={16} className="text-gray-500 group-hover:text-gray-300 transition-colors " /> Edit Post
                           </button>
-                          <button 
+                          <button
                             onClick={(e) => { e.stopPropagation(); setActiveDropdownId(null); onDelete && onDelete(); }}
                             className="w-full text-left px-4 py-3 hover:bg-red-50 cursor-pointer dark:hover:bg-red-500/10 text-red-600 hover:text-red-700 dark:text-red-500 dark:hover:text-red-400 text-sm font-medium transition-colors flex items-center gap-3 group"
                           >
@@ -247,10 +274,10 @@ export function Post({ post, index, onLike, onRepost, onComment, onDelete, onEdi
           </div>
 
           {post.reposted_post_id && !post.content && (
-             <div className="flex items-center gap-2 mb-1 -mt-1">
-                <Repeat size={12} className="text-gray-500" />
-                <span className="text-[12px] text-gray-500 font-bold uppercase tracking-wider">{post.author.name} Reposted</span>
-             </div>
+            <div className="flex items-center gap-2 mb-1 -mt-1">
+              <Repeat size={12} className="text-gray-500" />
+              <span className="text-[12px] text-gray-500 font-bold uppercase tracking-wider">{post.author.name} Reposted</span>
+            </div>
           )}
 
           {/* EDIT OR DISPLAY CONTENT */}
@@ -264,13 +291,13 @@ export function Post({ post, index, onLike, onRepost, onComment, onDelete, onEdi
                   autoFocus
                 />
                 <div className="flex justify-end gap-2 mt-2">
-                  <button 
+                  <button
                     onClick={() => setIsEditing(false)}
                     className="px-4 py-1.5 rounded-full text-sm font-bold text-gray-400 hover:bg-gray-800 transition-colors"
                   >
                     Cancel
                   </button>
-                  <button 
+                  <button
                     onClick={handleSaveEdit}
                     disabled={isSubmittingEdit || !editContent.trim()}
                     className="px-4 py-1.5 rounded-full text-sm font-bold bg-brand text-brand-contrast hover:opacity-90 transition-opacity disabled:opacity-50"
@@ -320,11 +347,11 @@ export function Post({ post, index, onLike, onRepost, onComment, onDelete, onEdi
             </div>
           )}
 
-            {/* Action Buttons */}
-            <div className="flex justify-between mt-4 text-gray-400 max-w-md">
-              <ActionIcon icon={MessageCircle} count={post.comments} hoverColor="hover:text-blue-500" hoverBg="group-hover:bg-blue-500/10" activeBg="bg-blue-500/10" isActive={showCommentInput} activeColor="text-blue-500" onClick={() => setShowCommentInput((prev) => !prev)} />
+          {/* Action Buttons */}
+          <div className="flex justify-between mt-4 text-gray-400 max-w-md">
+            <ActionIcon icon={MessageCircle} count={post.comments} hoverColor="hover:text-blue-500" hoverBg="group-hover:bg-blue-500/10" activeBg="bg-blue-500/10" isActive={showCommentInput} activeColor="text-blue-500" onClick={() => setShowCommentInput((prev) => !prev)} />
 
-              <div className="relative">
+            <div className="relative">
               <ActionIcon icon={Repeat} count={post.reposts} hoverColor="hover:text-green-500" hoverBg="group-hover:bg-green-500/10" activeBg="bg-green-500/10" isActive={post.isReposted ?? false} activeColor="text-green-500" onClick={() => setRepostMenuOpen(!repostMenuOpen)} />
 
               <AnimatePresence>
@@ -337,13 +364,13 @@ export function Post({ post, index, onLike, onRepost, onComment, onDelete, onEdi
                       exit={{ opacity: 0, scale: 0.9, y: 10 }}
                       className="absolute bottom-full mb-2 left-0 w-44 bg-white dark:bg-[#15202B]/95 backdrop-blur-xl border border-gray-200 dark:border-gray-700/50 rounded-2xl shadow-2xl overflow-hidden z-50 p-1"
                     >
-                      <button 
+                      <button
                         onClick={() => { onRepost(); setRepostMenuOpen(false); }}
                         className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-100 dark:hover:bg-white/5 rounded-xl transition-colors text-sm font-bold text-gray-700 dark:text-gray-200"
                       >
                         <Repeat size={18} /> {post.isReposted ? 'Undo Repost' : 'Repost'}
                       </button>
-                      <button 
+                      <button
                         onClick={() => { setShowQuoteModal(true); setRepostMenuOpen(false); }}
                         className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-100 dark:hover:bg-white/5 rounded-xl transition-colors text-sm font-bold text-gray-700 dark:text-gray-200"
                       >
@@ -438,59 +465,135 @@ export function Post({ post, index, onLike, onRepost, onComment, onDelete, onEdi
         </div>
       </div>
 
-      {/* Quote Repost Modal */}
-      <AnimatePresence>
-        {showQuoteModal && (
-          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowQuoteModal(false)} className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-            <motion.div initial={{ opacity: 0, scale: 0.9, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.9, y: 20 }} className="relative w-full max-w-lg bg-white dark:bg-[#15202B] rounded-3xl shadow-2xl overflow-hidden border border-gray-200 dark:border-gray-800 flex flex-col p-4">
-               <div className="flex justify-between items-center mb-4">
-                  <h3 className="text-xl font-bold dark:text-white">Quote Post</h3>
-                  <button onClick={() => setShowQuoteModal(false)} className="p-2 hover:bg-gray-100 dark:hover:bg-white/5 rounded-full transition-colors text-gray-500"><Trash2 size={20} /></button>
-               </div>
-               
-               <div className="flex gap-4">
-                  <img src={user?.user_metadata?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.id}`} className="w-12 h-12 rounded-full hidden sm:block" />
-                  <div className="flex-1">
-                     <textarea
-                        value={quoteText}
-                        onChange={(e) => setQuoteText(e.target.value)}
-                        placeholder="Add a comment..."
-                        className="w-full bg-transparent border-none text-xl dark:text-white focus:outline-none resize-none min-h-[100px]"
-                        autoFocus
-                     />
-                     
-                     <div className="mt-2 p-3 rounded-2xl border border-gray-100 dark:border-gray-800 opacity-60 scale-95 origin-top">
-                        <div className="flex items-center gap-2 mb-1">
-                           {post.author.avatar && (
-                             <img src={post.author.avatar} className="w-5 h-5 rounded-full" />
-                           )}
-                           <span className="text-sm font-bold text-white tracking-tight">{post.author.name}</span>
-                           <span className="text-xs text-gray-500">@{post.author.handle}</span>
-                        </div>
-                        <p className="text-[14px] text-gray-300 line-clamp-2">{post.content}</p>
-                     </div>
-                  </div>
-               </div>
-               
-               <div className="mt-4 flex justify-end">
+      {/* Quote Repost Modal (Portaled) */}
+      {typeof document !== 'undefined' && createPortal(
+        <AnimatePresence>
+          {showQuoteModal && (
+            <div className="fixed inset-0 z-[10000] flex items-start justify-center pt-8 sm:pt-16 px-4">
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setShowQuoteModal(false)}
+                className="absolute inset-0 bg-[#5b7083]/40 backdrop-blur-[2px]"
+              />
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95, y: -20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: -20 }}
+                className="relative w-full max-w-[600px] bg-black rounded-2xl shadow-2xl flex flex-col p-4 border border-none"
+              >
+                {/* X Modal Header */}
+                <div className="flex justify-between items-center mb-1">
                   <button
-                    onClick={async () => {
-                       if (!quoteText.trim()) return;
-                       await quoteRepost(post.id, quoteText.trim());
-                       setQuoteText('');
-                       setShowQuoteModal(false);
-                       alert("Post shared successfully!");
-                    }}
-                    className={`px-6 py-2 rounded-full font-bold transition-all ${quoteText.trim() ? 'bg-brand text-brand-contrast' : 'bg-brand/50 text-brand-contrast/50 cursor-not-allowed'}`}
+                    onClick={() => setShowQuoteModal(false)}
+                    className="p-2 hover:bg-white/10 rounded-full transition-colors text-white"
                   >
-                    Post
+                    <Trash2 size={18} />
                   </button>
-               </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+                  <button className="text-[rgb(29,155,240)] text-sm font-bold hover:bg-[rgb(29,155,240)]/10 px-3 py-1 rounded-full transition-colors">Drafts</button>
+                </div>
+
+                <div className="flex gap-3">
+                  <input
+                    type="file"
+                    hidden
+                    ref={fileInputRef}
+                    accept="image/*"
+                    onChange={handleImageUpload}
+                  />
+                  <div className="flex-shrink-0 pt-1">
+                    <div className="w-10 h-10 rounded-full bg-[#00ba7c] flex items-center justify-center text-white font-bold text-lg select-none">
+                      {user?.user_metadata?.full_name?.charAt(0) || user?.email?.charAt(0) || 'N'}
+                    </div>
+                  </div>
+                  <div className="flex-1">
+                    <textarea
+                      value={quoteText}
+                      onChange={(e) => setQuoteText(e.target.value)}
+                      placeholder="Add a comment"
+                      className="w-full bg-transparent border-none text-xl text-white placeholder-[#536471] focus:outline-none resize-none min-h-[50px] mt-1 leading-normal"
+                      autoFocus
+                    />
+
+                    {/* Quoted Post Preview (X Pro Style) */}
+                    <div className="mt-2 p-3 rounded-2xl border border-[rgb(47,51,54)] bg-transparent hover:bg-white/5 transition-colors overflow-hidden">
+                      <div className="flex items-center gap-2 mb-0.5">
+                        {post.author.avatar && (
+                          <img src={post.author.avatar} className="w-5 h-5 rounded-full" />
+                        )}
+                        <span className="text-[15px] font-bold text-white tracking-tight">{post.author.name}</span>
+                        <span className="text-[15px] text-[#536471] font-medium">@{post.author.handle} · {post.timestamp}</span>
+                      </div>
+                      <p className="text-[15px] text-white mt-0.5 font-normal leading-normal">{post.content}</p>
+                      {post.image && (
+                        <div className="mt-2 rounded-xl border border-[rgb(47,51,54)] overflow-hidden">
+                          <img src={post.image} className="w-full h-auto object-cover max-h-[300px]" />
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Image Preview */}
+                    {quoteImage && (
+                      <div className="relative mt-2 rounded-2xl overflow-hidden border border-[rgb(47,51,54)]">
+                        <img src={quoteImage} className="w-full h-auto max-h-[250px] object-cover" />
+                        <button
+                          onClick={() => setQuoteImage(null)}
+                          className="absolute top-2 right-2 p-1 bg-black/50 hover:bg-black/70 rounded-full text-white transition-colors"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    )}
+
+                    <hr className="mt-4 border-[rgb(47,51,54)]" />
+
+                    <div className="mt-3 flex justify-between items-center relative">
+                      <div className="flex items-center gap-1 -ml-2">
+                        <button onClick={() => fileInputRef.current?.click()} className="p-2 text-[rgb(29,155,240)] hover:bg-[rgb(29,155,240)]/10 rounded-full transition-colors"><Image size={20} /></button>
+                        <button onClick={() => setQuoteText(prev => prev + "\n1. Option A\n2. Option B")} className="p-2 text-[rgb(29,155,240)] hover:bg-[rgb(29,155,240)]/10 rounded-full transition-colors"><Pencil size={20} /></button>
+                        <div className="relative">
+                          <button onClick={() => setShowEmojiPicker(!showEmojiPicker)} className="p-2 text-[rgb(29,155,240)] hover:bg-[rgb(29,155,240)]/10 rounded-full transition-colors"><Smile size={20} /></button>
+                          {showEmojiPicker && (
+                            <motion.div
+                              initial={{ opacity: 0, scale: 0.9, y: 10 }}
+                              animate={{ opacity: 1, scale: 1, y: 0 }}
+                              className="absolute bottom-full mb-2 left-0 bg-gray-900 border border-gray-800 rounded-xl p-2 flex gap-2 shadow-2xl z-[101]"
+                            >
+                              {emojis.map(e => (
+                                <button key={e} onClick={() => { setQuoteText(prev => prev + e); setShowEmojiPicker(false); }} className="hover:scale-125 transition-transform">{e}</button>
+                              ))}
+                            </motion.div>
+                          )}
+                        </div>
+                        <button onClick={handleLocation} className="p-2 text-[rgb(29,155,240)] hover:bg-[rgb(29,155,240)]/10 rounded-full transition-colors"><MapPin size={20} /></button>
+                      </div>
+                      <button
+                        onClick={async () => {
+                          if (!quoteText.trim() && !quoteImage) return;
+                          await quoteRepost(post.id, quoteText.trim(), quoteImage);
+                          setQuoteText('');
+                          setQuoteImage(null);
+                          setShowQuoteModal(false);
+                        }}
+                        disabled={!quoteText.trim() && !quoteImage}
+                        className={`px-5 py-2 rounded-full font-bold text-[15px] transition-all ${(quoteText.trim() || quoteImage)
+                            ? 'bg-[rgb(29,155,240)] text-white hover:bg-[rgb(26,140,216)] shadow-sm'
+                            : 'bg-[rgb(29,155,240)]/50 text-white/50 cursor-not-allowed'
+                          }`}
+                      >
+                        Post
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>,
+        document.body
+      )}
+
     </motion.article>
   );
 }

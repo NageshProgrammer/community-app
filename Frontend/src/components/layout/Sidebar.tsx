@@ -1,6 +1,6 @@
 // src/components/layout/Sidebar.tsx
 import { useState, useEffect, useRef } from 'react';
-import { Home, Bell, MessageSquare, User, MoreHorizontal, Bookmark, Settings, HelpCircle, Sun, Moon, LogOut } from 'lucide-react';
+import { Home, Bell, MessageSquare, User, MoreHorizontal, Bookmark, Settings, HelpCircle, Sun, Moon, LogOut, Pencil, Globe } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useTheme } from '../../context/ThemeContext';
@@ -86,12 +86,22 @@ export function Sidebar({ onOpenPostModal }: SidebarProps) {
     <div className="hidden sm:flex flex-col w-20 xl:w-64 h-screen sticky top-0 border-r-4 border-gray-800 p-4 z-20 bg-dark">
 
       {/* Logo Area */}
-      <div className="flex items-center justify-center xl:justify-start mb-8 p-3">
-        <motion.div
-          whileHover={{ rotate: 180 }}
-          className="w-10 h-10 bg-brand rounded-full flex-shrink-0 shadow-lg shadow-brand/20"
-        />
-        <span className="hidden xl:block ml-4 text-xl font-bold">Community</span>
+      <div className="flex items-center justify-center xl:justify-start mb-8 p-3 group cursor-pointer">
+        <div className="relative flex items-center justify-center">
+          <motion.div
+            animate={{ rotate: 360 }}
+            transition={{ duration: 15, repeat: Infinity, ease: "linear" }}
+            className="text-brand relative z-10"
+          >
+            <Globe size={38} strokeWidth={2.5} />
+          </motion.div>
+          {/* Globe Glow Aura */}
+          <div className="absolute inset-0 bg-brand/20 blur-xl rounded-full animate-pulse" />
+          <div className="absolute inset-x-0 bottom-0 h-1 bg-brand/30 blur-md rounded-full -mb-1" />
+        </div>
+        <span className="hidden xl:block ml-4 text-[22px] font-black tracking-tight text-white group-hover:text-brand transition-colors">
+          Community
+        </span>
       </div>
 
       <nav className="flex flex-col gap-2">
@@ -190,14 +200,17 @@ export function Sidebar({ onOpenPostModal }: SidebarProps) {
         </div>
       </nav>
 
-      <motion.button
-        onClick={onOpenPostModal}
-        whileHover={{ scale: 1.05 }}
-        whileTap={{ scale: 0.95 }}
-        className="mt-auto bg-brand text-brand-contrast font-bold py-3 px-4 rounded-full hidden xl:block shadow-lg shadow-brand/20 cursor-pointer"
-      >
-        Post
-      </motion.button>
+      <div className="mt-auto px-2">
+        <motion.button
+          onClick={onOpenPostModal}
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
+          className="w-full bg-[rgb(29,155,240)] text-white font-bold py-3.5 rounded-full shadow-lg shadow-blue-500/20 cursor-pointer transition-all hover:bg-[rgb(26,140,216)] flex items-center justify-center gap-2"
+        >
+          <span className="hidden xl:block">Post</span>
+          <Pencil size={24} className="xl:hidden" />
+        </motion.button>
+      </div>
     </div>
   );
 }

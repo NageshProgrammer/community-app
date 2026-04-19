@@ -21,11 +21,20 @@ export function Feed() {
   const [activeDropdownId, setActiveDropdownId] = useState<string | null>(null);
 
   let displayPosts = posts;
+
+  // Filter out the current user's own reposts (but keep them for others)
+  if (user) {
+    displayPosts = displayPosts.filter(post => {
+      // If it's a repost by the current user, hide it from their main feed
+      const isOwnRepost = post.reposted_post_id && post.author.id === user.id;
+      return !isOwnRepost;
+    });
+  }
   
   if (sharedPostId) {
-    displayPosts = posts.filter(post => post.id === sharedPostId);
+    displayPosts = displayPosts.filter(post => post.id === sharedPostId);
   } else if (searchQuery) {
-    displayPosts = posts.filter(post => 
+    displayPosts = displayPosts.filter(post => 
       post.content.toLowerCase().includes(searchQuery.toLowerCase()) ||
       post.author.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       post.author.handle.toLowerCase().includes(searchQuery.toLowerCase())

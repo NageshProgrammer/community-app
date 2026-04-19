@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useEffect } from 'react';
 import type { ReactNode } from 'react';
 import { supabase } from '../utils/supabase';
 import { useAuth } from './AuthContext';
+import { useNotification } from './NotificationContext';
 
 interface SocialContextType {
   followingIds: string[];
@@ -17,6 +18,7 @@ const SocialContext = createContext<SocialContextType | undefined>(undefined);
 
 export function SocialProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
+  const { showNotification } = useNotification();
   const [followingIds, setFollowingIds] = useState<string[]>([]);
   const [followerCounts, setFollowerCounts] = useState<Record<string, number>>({});
   const [searchQuery, setSearchQuery] = useState('');
@@ -100,7 +102,7 @@ export function SocialProvider({ children }: { children: ReactNode }) {
       // 2. ROLLBACK ON FAILURE
       setFollowingIds(originalFollowing);
       setFollowerCounts(originalCounts);
-      alert('Error updating follow status. Please try again.');
+      showNotification('Error updating follow status. Please try again.', 'error');
     }
   };
 

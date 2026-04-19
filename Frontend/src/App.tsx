@@ -8,6 +8,7 @@ import { PostProvider } from './context/PostContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { SocialProvider } from './context/SocialContext';
+import { NotificationProvider } from './context/NotificationContext';
 
 // Layout Components
 import { Sidebar } from './components/layout/Sidebar';
@@ -105,13 +106,15 @@ function App() {
   return (
     <AuthProvider>
       <DataProvider>
-        <ThemeProvider>
-          <SocialProvider>
-            <PostProvider>
-              <AppContent />
-            </PostProvider>
-          </SocialProvider>
-        </ThemeProvider>
+        <NotificationProvider>
+          <ThemeProvider>
+            <SocialProvider>
+              <PostProvider>
+                <AppContent />
+              </PostProvider>
+            </SocialProvider>
+          </ThemeProvider>
+        </NotificationProvider>
       </DataProvider>
     </AuthProvider>
   );

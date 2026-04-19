@@ -41,15 +41,18 @@ export default function Notifications() {
   const { initialData } = useData();
   const [notifications, setNotifications] = useState<SupabaseNotification[]>([]);
   const [filter, setFilter] = useState<'all' | 'unread'>('all');
+  const [loading, setLoading] = useState(true);
 
   const fetchNotifications = async () => {
     if (!user) return;
 
     if (initialData?.notifications) {
       setNotifications(initialData.notifications);
+      setLoading(false);
       return;
     }
 
+    setLoading(true);
     try {
       const { data, error } = await supabase
         .from('notifications')
@@ -68,6 +71,8 @@ export default function Notifications() {
       setNotifications(data || []);
     } catch (err) {
       console.error('Error fetching notifications:', err);
+    } finally {
+      setLoading(false);
     }
   };
 

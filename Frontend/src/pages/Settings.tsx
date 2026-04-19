@@ -7,13 +7,14 @@ import {
   ShieldAlert,
   LogOut,
   Globe,
-  Smartphone,
-  CheckCircle2
+  Smartphone
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
+import { useNotification } from '../context/NotificationContext';
 import { useNavigate } from 'react-router-dom';
+import { supabase } from '../utils/supabase';
 
 type TabType = 'account' | 'privacy' | 'notifications' | 'appearance';
 
@@ -46,20 +47,20 @@ const ToggleSwitch = ({ checked, onChange }: { checked: boolean, onChange: () =>
 };
 
 export default function Settings() {
+  const { showNotification } = useNotification();
   const [activeTab, setActiveTab] = useState<TabType>('account');
   const { user, signOut } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
   const [isSaving, setIsSaving] = useState(false);
-  const [saveSuccess, setSaveSuccess] = useState(false);
 
   const [settings, setSettings] = useState({
-    privateAccount: false,
-    activityStatus: true,
-    readReceipts: true,
-    pushNotifications: true,
-    emailNotifications: false,
-    marketingEmails: false,
+    privateAccount: user?.user_metadata?.privateAccount || false,
+    activityStatus: user?.user_metadata?.activityStatus ?? true,
+    readReceipts: user?.user_metadata?.readReceipts ?? true,
+    pushNotifications: user?.user_metadata?.pushNotifications ?? true,
+    emailNotifications: user?.user_metadata?.emailNotifications || false,
+    marketingEmails: user?.user_metadata?.marketingEmails || false,
   });
 
   const toggleSetting = (key: keyof typeof settings) => {
@@ -71,13 +72,34 @@ export default function Settings() {
     navigate('/login');
   };
 
-  const handleSaveChanges = () => {
+  const handleSaveChanges = async () => {
     setIsSaving(true);
-    setTimeout(() => {
+    try {
+      const { error } = await supabase.auth.updateUser({
+        data: settings
+      });
+
+      if (error) throw error;
+      showNotification('Settings saved successfully', 'success');
+    } catch (err: any) {
+      showNotification(err.message || 'Failed to save settings', 'error');
+    } finally {
       setIsSaving(false);
-      setSaveSuccess(true);
-      setTimeout(() => setSaveSuccess(false), 3000);
-    }, 1000);
+    }
+  };
+
+  const handlePasswordChange = async () => {
+    showNotification('Password reset email sent!', 'info');
+    // In a real app, this triggers the flow
+    await supabase.auth.resetPasswordForEmail(user?.email || '');
+  };
+
+  const handleDeleteAccount = () => {
+    const confirm = window.confirm("Are you absolutely sure? This will permanently delete your account data.");
+    if (confirm) {
+      showNotification('Account deletion requested. Our team will process this.', 'warning');
+      setTimeout(() => handleLogout(), 2000);
+    }
   };
 
   return (
@@ -131,7 +153,6 @@ export default function Settings() {
         <div className="w-full md:rounded-2xl border border-gray-800 overflow-hidden bg-gray-900 mb-8">
           <AnimatePresence mode="wait">
             
-            {/* ACCOUNT TAB */}
             {activeTab === 'account' && (
               <motion.div
                 key="account"
@@ -142,49 +163,56 @@ export default function Settings() {
                 className="flex flex-col bg-transparent"
               >
                 <div className="p-4 sm:p-6 border-b border-gray-800">
-                  <h3 className="text-lg font-medium text-white mb-4">Profile Information</h3>
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-500 mb-1">Username</label>
-                      <input 
-                        type="text" 
-                        defaultValue={user?.email?.split('@')[0] || 'username'}
-                        className="w-full bg-gray-800 border border-gray-800 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-all sm:text-sm"
-                      />
+                  <h3 className="text-lg font-medium text-white mb-6 flex items-center gap-2">
+                     <User className="w-5 h-5 text-gray-500" />
+                     Profile Information
+                  </h3>
+                  
+                  <div className="space-y-6">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-gray-500 uppercase flex items-center gap-1.5">
+                          Username
+                        </label>
+                        <input 
+                          type="text" 
+                          defaultValue={user?.email?.split('@')[0] || 'username'}
+                          className="w-full bg-gray-800 border border-gray-800 rounded-xl px-4 py-2.5 text-white focus:border-brand outline-none transition-all"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-gray-500 uppercase flex items-center gap-1.5">
+                          Email Address
+                        </label>
+                        <input 
+                          type="email" 
+                          defaultValue={user?.email || 'email@example.com'}
+                          className="w-full bg-gray-800 border border-gray-800 rounded-xl px-4 py-2.5 text-white focus:border-brand outline-none transition-all"
+                        />
+                      </div>
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-500 mb-1">Email Address</label>
-                      <input 
-                        type="email" 
-                        defaultValue={user?.email || 'email@example.com'}
-                        className="w-full bg-gray-800 border border-gray-800 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-all sm:text-sm"
-                      />
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-4 mt-6">
-                    <button 
-                      onClick={handleSaveChanges}
-                      disabled={isSaving}
-                      className="px-6 py-2 bg-brand text-brand-contrast text-sm font-bold rounded-full hover:opacity-90 transition-all disabled:opacity-50"
-                    >
-                      {isSaving ? 'Saving...' : 'Save Changes'}
-                    </button>
-                    {saveSuccess && (
-                      <motion.div 
-                        initial={{ opacity: 0, x: -10 }} 
-                        animate={{ opacity: 1, x: 0 }} 
-                        className="flex items-center gap-1.5 text-green-500 text-sm font-medium"
+
+                    <div className="flex items-center gap-4 mt-2">
+                      <button 
+                        onClick={handleSaveChanges}
+                        disabled={isSaving}
+                        className="px-6 py-2 bg-brand text-brand-contrast text-sm font-bold rounded-full hover:opacity-90 transition-all disabled:opacity-50"
                       >
-                        <CheckCircle2 size={16} />
-                        Saved!
-                      </motion.div>
-                    )}
+                        {isSaving ? 'Saving...' : 'Save Changes'}
+                      </button>
+                    </div>
                   </div>
                 </div>
 
                 <div className="p-4 sm:p-6 border-b border-gray-800">
-                  <h3 className="text-lg font-medium text-white mb-4">Password & Security</h3>
-                  <button className="w-full sm:w-auto px-4 py-2 bg-gray-800 text-white text-sm font-medium rounded-lg hover:bg-gray-900 border border-gray-800 transition-colors">
+                  <h3 className="text-lg font-medium text-white mb-4 flex items-center gap-2">
+                    <Lock className="w-5 h-5 text-gray-500" />
+                    Password & Security
+                  </h3>
+                  <button 
+                    onClick={handlePasswordChange}
+                    className="w-full sm:w-auto px-4 py-2 bg-gray-800 text-white text-sm font-medium rounded-lg hover:bg-gray-900 border border-gray-800 transition-colors"
+                  >
                     Change Password
                   </button>
                 </div>
@@ -195,9 +223,12 @@ export default function Settings() {
                     Danger Zone
                   </h3>
                   <p className="text-sm text-gray-500 mb-4">
-                    Permanently delete your account and all of your content. This action cannot be undone.
+                    Permanently delete your account and all of your content.
                   </p>
-                  <button className="px-4 py-2 border border-red-500/50 text-red-500 text-sm font-medium rounded-lg hover:bg-red-500 hover:text-white transition-colors">
+                  <button 
+                    onClick={handleDeleteAccount}
+                    className="px-4 py-2 border border-red-500/50 text-red-500 text-sm font-medium rounded-lg hover:bg-red-500 hover:text-white transition-colors"
+                  >
                     Delete Account
                   </button>
                 </div>

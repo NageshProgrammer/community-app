@@ -16,8 +16,9 @@ import { supabase } from "../utils/supabase";
 import { useParams, useNavigate } from "react-router-dom";
 import { useSocial } from "../context/SocialContext";
 import { usePosts } from "../context/PostContext";
+import { useNotification } from "../context/NotificationContext";
 
-const TABS = ["Posts", "Replies", "Media", "Likes"];
+const TABS = ["Posts", "Reposts", "Replies", "Likes"];
 
 interface UserProfile {
   id: string;
@@ -27,10 +28,12 @@ interface UserProfile {
   bio: string;
   website: string;
   created_at: string;
+  cover_url?: string;
 }
 
 export function Profile() {
   const { id } = useParams();
+  const { showNotification } = useNotification();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("Posts");
   const [activeDropdownId, setActiveDropdownId] = useState<string | null>(null);
@@ -56,8 +59,12 @@ export function Profile() {
   const [loadingFollows, setLoadingFollows] = useState(false);
 
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [coverUrl, setCoverUrl] = useState("");
+  const [coverFile, setCoverFile] = useState<File | null>(null);
+  const [showStickyName, setShowStickyName] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const coverInputRef = useRef<HTMLInputElement>(null);
 
   const [followerCount, setFollowerCount] = useState(0);
   const [followingCount, setFollowingCount] = useState(0);
@@ -129,6 +136,7 @@ export function Profile() {
         setBio(activeProfile.bio || "");
         setWebsite(activeProfile.website || "");
         setAvatarUrl(activeProfile.avatar_url || "");
+        setCoverUrl(activeProfile.cover_url || "");
 
         const { count: fetchedFollowers } = await supabase
           .from("follows")
@@ -171,27 +179,78 @@ export function Profile() {
           `)
           .eq("user_id", targetUserId);
 
-        const allVisiblePosts = [...(postsData || [])];
-        if (directRepostsData) {
-           directRepostsData.forEach((item: any) => {
-              if (item.post && !allVisiblePosts.find(p => p.id === item.post.id)) {
-                 allVisiblePosts.push(item.post);
-              }
-           });
-        }
+        // Fetch replies (posts the user commented on)
+        const { data: repliesData } = await supabase
+          .from("post_comments")
+          .select(`
+            post:posts (
+              *,
+              author:profiles!author_id (*),
+              likes:post_likes!post_id(count),
+              comments:post_comments!post_id(count),
+              reposts:post_reposts!post_id(count)
+            )
+          `)
+          .eq("user_id", targetUserId);
+
+        // Fetch likes (posts the user liked)
+        const { data: likesData } = await supabase
+          .from("post_likes")
+          .select(`
+            post:posts (
+              *,
+              author:profiles!author_id (*),
+              likes:post_likes!post_id(count),
+              comments:post_comments!post_id(count),
+              reposts:post_reposts!post_id(count)
+            )
+          `)
+          .eq("user_id", targetUserId);
+
+        const allVisiblePosts: any[] = [...(postsData || [])];
+        
+        // Helper to add unique posts from joins
+        const addUniquePosts = (data: any[]) => {
+          if (!data) return;
+          data.forEach((item: any) => {
+            if (item.post && !allVisiblePosts.find(p => p.id === item.post.id)) {
+              // Add a virtual property to help with filtering if needed
+              allVisiblePosts.push(item.post);
+            }
+          });
+        };
+
+        addUniquePosts(directRepostsData || []);
+        addUniquePosts(repliesData || []);
+        addUniquePosts(likesData || []);
         
         allVisiblePosts.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
-        if (allVisiblePosts.length > 0) {
-          const likedResponse = currentUser
+        if (allVisiblePosts.length >= 0) {
+          const likedPostsRes = currentUser
             ? await supabase.from('post_likes').select('post_id').eq('user_id', currentUser.id)
             : { data: [] };
-          const repostedResponse = currentUser
+          const repostedPostsRes = currentUser
             ? await supabase.from('post_reposts').select('post_id').eq('user_id', currentUser.id)
             : { data: [] };
 
-          const likedIds = likedResponse.data?.map((item: any) => item.post_id) ?? [];
-          const repostedIds = repostedResponse.data?.map((item: any) => item.post_id) ?? [];
+          const likedIds = likedPostsRes.data?.map((item: any) => item.post_id) ?? [];
+          const repostedIds = repostedPostsRes.data?.map((item: any) => item.post_id) ?? [];
+
+          // Also track which posts were specifically liked/replied to by the TARGET user for tab filtering
+          const targetLikedIds = (likesData || [])
+            .map((item: any) => item.post?.id)
+            .filter(Boolean);
+            
+          const targetRepliedIds = (repliesData || [])
+            .map((item: any) => item.post?.id)
+            .filter(Boolean);
+            
+          const targetRepostedIds = (directRepostsData || [])
+            .map((item: any) => item.post?.id)
+            .filter(Boolean);
+
+          console.log(`DEBUG: Found ${targetLikedIds.length} likes for user ${targetUserId}`);
 
           const mappedPosts: PostData[] = allVisiblePosts.map(
             (post: any) => {
@@ -206,12 +265,15 @@ export function Profile() {
                   },
                   content: post.content,
                   timestamp: new Date(post.created_at).toLocaleString(),
-                  created_at: post.created_at,
                   likes: post.likes?.[0]?.count || 0,
                   comments: post.comments?.[0]?.count || 0,
                   reposts: post.reposts?.[0]?.count || 0,
                   isLiked: likedIds.includes(post.id),
                   isReposted: repostedIds.includes(post.id),
+                  // Virtual flags for tab filtering
+                  _isTargetLiked: targetLikedIds.includes(post.id),
+                  _isTargetReplied: targetRepliedIds.includes(post.id),
+                  _isTargetReposted: targetRepostedIds.includes(post.id),
                   image: post.image,
                   location: post.location,
                   reposted_post_id: post.reposted_post_id,
@@ -225,7 +287,6 @@ export function Profile() {
                     },
                     content: post.original_post.content,
                     timestamp: new Date(post.original_post.created_at).toLocaleString(),
-                    created_at: post.original_post.created_at,
                    likes: post.original_post.likes?.[0]?.count || 0,
                    comments: post.original_post.comments?.[0]?.count || 0,
                    reposts: post.original_post.reposts?.[0]?.count || 0,
@@ -246,11 +307,27 @@ export function Profile() {
     loadProfile();
   }, [targetUserId, isOwnProfile, currentUser?.id]);
 
+  useEffect(() => {
+    const handleScroll = () => {
+      setShowStickyName(window.scrollY > 150);
+    };
+    window.addEventListener("scroll", handleScroll);
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
+
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       setAvatarUrl(URL.createObjectURL(file));
       setAvatarFile(file);
+    }
+  };
+
+  const handleCoverChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setCoverUrl(URL.createObjectURL(file));
+      setCoverFile(file);
     }
   };
 
@@ -261,37 +338,39 @@ export function Profile() {
     setAvatarFile(null);
   };
 
+  const handleRemoveCover = () => {
+    setCoverUrl("");
+    setCoverFile(null);
+  };
+
   const handleUpdateProfile = async () => {
     if (!currentUser || !profile) return;
     setLoading(true);
 
     try {
       let finalAvatarUrl = avatarUrl;
+      let finalCoverUrl = coverUrl;
 
-      // Upload image to Supabase Storage if a new file was selected
+      // Upload Avatar
       if (avatarFile) {
         const fileExt = avatarFile.name.split(".").pop();
-        const fileName = `${currentUser.id}-${Date.now()}.${fileExt}`;
-
-        // Upload to 'avatars' bucket
-        const { error: uploadError } = await supabase.storage
-          .from("avatars")
-          .upload(fileName, avatarFile);
-
-        if (uploadError) {
-          console.error("Storage upload error:", uploadError);
-          throw uploadError;
-        }
-
-        // Get the permanent public URL
-        const {
-          data: { publicUrl },
-        } = supabase.storage.from("avatars").getPublicUrl(fileName);
-
+        const fileName = `avatars/${currentUser.id}-${Date.now()}.${fileExt}`;
+        const { error: uploadError } = await supabase.storage.from("avatars").upload(fileName, avatarFile);
+        if (uploadError) throw uploadError;
+        const { data: { publicUrl } } = supabase.storage.from("avatars").getPublicUrl(fileName);
         finalAvatarUrl = publicUrl;
       }
 
-      // Save profile data with the permanent image URL
+      // Upload Cover
+      if (coverFile) {
+        const fileExt = coverFile.name.split(".").pop();
+        const fileName = `covers/${currentUser.id}-${Date.now()}.${fileExt}`;
+        const { error: uploadError } = await supabase.storage.from("avatars").upload(fileName, coverFile); // Using avatars bucket for simplicity or separate
+        if (uploadError) throw uploadError;
+        const { data: { publicUrl } } = supabase.storage.from("avatars").getPublicUrl(fileName);
+        finalCoverUrl = publicUrl;
+      }
+
       const { data, error } = await supabase
         .from("profiles")
         .upsert({
@@ -301,6 +380,7 @@ export function Profile() {
           bio: bio || profile.bio,
           website: website || profile.website,
           avatar_url: finalAvatarUrl,
+          cover_url: finalCoverUrl,
         })
         .select()
         .single();
@@ -310,11 +390,12 @@ export function Profile() {
       if (data) {
         setProfile(data as UserProfile);
         setAvatarFile(null);
+        setCoverFile(null);
         setIsEditing(false);
       }
     } catch (err) {
       console.error("Error updating profile:", err);
-      alert("Failed to update profile. Check console for details.");
+      showNotification("Failed to update profile", 'error');
     } finally {
       setLoading(false);
     }
@@ -385,9 +466,22 @@ export function Profile() {
         >
           <ArrowLeft size={20} />
         </button>
-        <div>
-          {/* Fixed: Changed text color to text-black for light mode */}
-          <h2 className="text-xl font-bold text-white">{profile?.full_name}</h2>
+        <div className="flex flex-col">
+          <AnimatePresence>
+            {showStickyName && (
+              <motion.h2 
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 10 }}
+                className="text-xl font-bold text-white truncate max-w-[200px]"
+              >
+                {profile?.full_name}
+              </motion.h2>
+            )}
+          </AnimatePresence>
+          {!showStickyName && (
+             <h2 className="text-xl font-bold text-white transition-all duration-300">Profile</h2>
+          )}
           <p className="text-xs text-gray-600 dark:text-gray-400">
             {posts.length} Posts
           </p>
@@ -395,7 +489,39 @@ export function Profile() {
       </header>
 
       {/* Banner Area */}
-      <div className="relative h-32 sm:h-48 bg-gradient-to-r from-brand to-blue-900">
+      <div className="relative h-32 sm:h-48 bg-gray-800 overflow-hidden">
+        {coverUrl ? (
+           <img src={coverUrl} className="w-full h-full object-cover" alt="Cover" />
+        ) : (
+           <div className="w-full h-full bg-gradient-to-r from-brand to-blue-900" />
+        )}
+
+        <AnimatePresence>
+          {isEditing && (
+             <motion.div 
+               initial={{ opacity: 0 }}
+               animate={{ opacity: 1 }}
+               className="absolute inset-0 bg-black/40 flex items-center justify-center gap-3"
+             >
+                <input type="file" ref={coverInputRef} className="hidden" accept="image/*" onChange={handleCoverChange} />
+                <button 
+                  onClick={() => coverInputRef.current?.click()}
+                  className="p-3 bg-white/20 backdrop-blur-md rounded-full text-white hover:bg-white/40 transition-all border border-white/30"
+                >
+                   <Camera size={24} />
+                </button>
+                {coverUrl && (
+                  <button 
+                    onClick={handleRemoveCover}
+                    className="p-3 bg-red-500/20 backdrop-blur-md rounded-full text-red-400 hover:bg-red-500/40 transition-all border border-red-500/30"
+                  >
+                     <X size={24} />
+                  </button>
+                )}
+             </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* AVATAR WRAPPER */}
         <div 
           onClick={() => !isEditing && setShowAvatarModal(true)}
@@ -648,7 +774,7 @@ export function Profile() {
             <span
               className={
                 activeTab === tab
-                  ? "text-black font-bold"
+                  ? "text-black dark:text-white font-bold"
                   : "text-gray-400 font-medium"
               }
             >
@@ -664,33 +790,94 @@ export function Profile() {
         ))}
       </div>
 
-      <div className="min-h-[400px]">
-        {activeTab === "Posts" ? (
-          <div>
-            {posts.map((post, idx) => (
-              <Post
-                key={post.id}
-                post={post}
-                index={idx}
-                onLike={() => toggleLike(post.id)}
-                onComment={(content) => addComment(post.id, content)}
-                onRepost={() => toggleRepost(post.id)}
-                activeDropdownId={activeDropdownId} 
-                setActiveDropdownId={setActiveDropdownId}
-              />
-            ))}
-            {posts.length === 0 && !loading && (
-              <div className="p-10 text-center text-gray-500">
-                No posts shared yet.
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className="p-10 text-center text-gray-500 italic">
-            Coming soon.
-          </div>
-        )}
-      </div>
+       <div className="min-h-[400px]">
+         {activeTab === "Posts" ? (
+           <div>
+             {posts.filter(p => !p.reposted_post_id && p.author.id === targetUserId).map((post, idx) => (
+               <Post
+                 key={post.id}
+                 post={post}
+                 index={idx}
+                 onLike={() => toggleLike(post.id)}
+                 onComment={(content) => addComment(post.id, content)}
+                 onRepost={() => toggleRepost(post.id)}
+                 activeDropdownId={activeDropdownId} 
+                 setActiveDropdownId={setActiveDropdownId}
+               />
+             ))}
+             {posts.filter(p => !p.reposted_post_id && p.author.id === targetUserId).length === 0 && !loading && (
+               <div className="p-10 text-center text-gray-500">
+                 No posts shared yet.
+               </div>
+             )}
+           </div>
+         ) : activeTab === "Reposts" ? (
+           <div>
+             {posts.filter(p => (p as any)._isTargetReposted).map((post, idx) => (
+               <div key={`repost-container-${post.id}`}>
+                 <div className="px-12 pt-3 flex items-center gap-2 text-gray-500 text-xs font-bold">
+                    <svg viewBox="0 0 24 24" className="w-4 h-4 fill-current"><g><path d="M4.5 3.88l4.432 4.43-1.414 1.414L4.5 6.7V17H15v2H2.5V6.7L.414 8.785-1 7.37 4.5 3.88zM23.5 17l-4.432-4.43 1.414-1.414L23.5 14.3V4H13V2h12.5v12.3l2.086-2.086 1.414 1.414L23.5 17z"></path></g></svg>
+                    <span>{isOwnProfile ? "You" : (profile?.full_name || "User")} Reposted</span>
+                 </div>
+                 <Post
+                   post={post}
+                   index={idx}
+                   onLike={() => toggleLike(post.id)}
+                   onComment={(content) => addComment(post.id, content)}
+                   onRepost={() => toggleRepost(post.id)}
+                   activeDropdownId={activeDropdownId} 
+                   setActiveDropdownId={setActiveDropdownId}
+                 />
+               </div>
+             ))}
+             {posts.filter(p => (p as any)._isTargetReposted).length === 0 && !loading && (
+               <div className="p-10 text-center text-gray-500">
+                 No reposts yet.
+               </div>
+             )}
+           </div>
+         ) : activeTab === "Replies" ? (
+           <div>
+             {posts.filter(p => (p as any)._isTargetReplied).map((post, idx) => (
+               <Post
+                 key={post.id}
+                 post={post}
+                 index={idx}
+                 onLike={() => toggleLike(post.id)}
+                 onComment={(content) => addComment(post.id, content)}
+                 onRepost={() => toggleRepost(post.id)}
+                 activeDropdownId={activeDropdownId} 
+                 setActiveDropdownId={setActiveDropdownId}
+               />
+             ))}
+             {posts.filter(p => (p as any)._isTargetReplied).length === 0 && !loading && (
+               <div className="p-10 text-center text-gray-500">
+                 No replies yet.
+               </div>
+             )}
+           </div>
+         ) : activeTab === "Likes" ? (
+           <div>
+             {posts.filter(p => (p as any)._isTargetLiked).map((post, idx) => (
+               <Post
+                 key={post.id}
+                 post={post}
+                 index={idx}
+                 onLike={() => toggleLike(post.id)}
+                 onComment={(content) => addComment(post.id, content)}
+                 onRepost={() => toggleRepost(post.id)}
+                 activeDropdownId={activeDropdownId} 
+                 setActiveDropdownId={setActiveDropdownId}
+               />
+             ))}
+             {posts.filter(p => (p as any)._isTargetLiked).length === 0 && !loading && (
+               <div className="p-10 text-center text-gray-500">
+                 No likes yet.
+               </div>
+             )}
+           </div>
+         ) : null}
+       </div>
 
       {loading && (
         <div className="fixed inset-0 bg-white/50 dark:bg-dark/20 backdrop-blur-sm flex items-center justify-center z-50">

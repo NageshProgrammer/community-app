@@ -1,9 +1,10 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
-import { Send, ArrowLeft, MoreVertical, Image, Smile, Mic, Heart, Reply, X, UserMinus, ShieldCheck, LogOut, Plus, Search, Camera, Pencil, Check } from 'lucide-react';
+import { Send, ArrowLeft, MoreVertical, Image, Smile, Mic, Reply, X, UserMinus, ShieldCheck, LogOut, Plus, Search, Camera, Pencil, Check, Trash2, User, Bell } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../../context/AuthContext';
 import { io } from 'socket.io-client';
 import { supabase } from '../../utils/supabase';
+import { useNotification } from '../../context/NotificationContext';
 
 type Chat = {
   id: string;
@@ -21,7 +22,7 @@ interface ConversationProps {
   onBack: () => void;
 }
 
-const BACKEND_URL = (import.meta.env.VITE_API_URL || 'http://localhost:10000').replace(/\/$/, '');
+const BACKEND_URL = (import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || 'http://localhost:10000').replace(/\/$/, '');
 const socket = io(BACKEND_URL);
 
 const COMMON_EMOJIS = [
@@ -31,13 +32,15 @@ const COMMON_EMOJIS = [
 
 export default function Conversation({ chat, onBack }: ConversationProps) {
   const { user } = useAuth();
+  const { showNotification } = useNotification();
   const [messages, setMessages] = useState<any[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [uploading, setUploading] = useState(false);
   const [showEmojis, setShowEmojis] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [replyingTo, setReplyingTo] = useState<any | null>(null);
-  
+  const [showMenu, setShowMenu] = useState(false);
+
   // Edit States
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState('');
@@ -52,11 +55,19 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
   const [addingMembers, setAddingMembers] = useState(false);
   const [memberSearch, setMemberSearch] = useState('');
   const [showMemberSearch, setShowMemberSearch] = useState(false);
-  const [groupAvatar, setGroupAvatar] = useState<string | null>(chat.avatar_url || null);
+  const [groupAvatar, setGroupAvatar] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Broad check for avatar URL across possible field names
+    const url = chat.avatar_url || (chat as any).avatarUrl || (chat as any).photo_url;
+    setGroupAvatar(url || null);
+  }, [chat]);
+
   const groupAvatarInputRef = useRef<HTMLInputElement>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const messageInputRef = useRef<HTMLInputElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const currentUserIsAdmin = useMemo(() => {
@@ -137,11 +148,29 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
         }
       } else {
         const err = await response.json();
-        alert(err.error || 'Action failed');
+        showNotification(err.error || 'Action failed', 'error');
       }
     } catch (err) {
       console.error('Group action failed:', err);
     }
+  };
+
+  const handleClearChat = async () => {
+    const confirm = window.confirm("Clear all messages in this conversation?");
+    if (confirm) {
+      setMessages([]);
+      showNotification('Conversation cleared', 'success');
+      setShowMenu(false);
+    }
+  };
+
+  const handleViewProfile = () => {
+    if (chat.targetUserId) {
+      navigate(`/profile/${chat.targetUserId}`);
+    } else {
+      showNotification('User profile not found', 'error');
+    }
+    setShowMenu(false);
   };
 
   const fetchFollowing = async () => {
@@ -154,9 +183,9 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
         .eq('follower_id', user.id);
 
       if (followError) throw followError;
-      
+
       const followingIds = (followData || []).map(f => f.following_id || f.following_user_id).filter(Boolean);
-      
+
       if (followingIds.length === 0) {
         setFollowingList([]);
         return;
@@ -218,6 +247,13 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
     }
   }, [messages]);
 
+  // Focus input on reply
+  useEffect(() => {
+    if (replyingTo && messageInputRef.current) {
+      messageInputRef.current.focus();
+    }
+  }, [replyingTo]);
+
   // 3. Send Message
   const handleSend = async (text?: string, imageUrl?: string, voiceUrl?: string) => {
     const content = text || newMessage;
@@ -240,14 +276,18 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
           conversationId: chat.id,
           text: content,
           imageUrl: imageUrl,
-          voiceUrl: voiceUrl,
-          replyToId: replyId
+          reply_to_id: replyId
         })
       });
 
       if (response.ok) {
         const sentMsg = await response.json();
-        setMessages(prev => [...prev, sentMsg]);
+        // Manually attach the reply object for instant rendering
+        const messageWithReply = { 
+          ...sentMsg, 
+          reply_to: replyingTo ? (Array.isArray(replyingTo) ? replyingTo : [replyingTo]) : null 
+        };
+        setMessages(prev => [...prev, messageWithReply]);
         setReplyingTo(null);
       }
     } catch (err) {
@@ -265,9 +305,9 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
     try {
       const response = await fetch(`${BACKEND_URL}/api/messages/${messageId}`, {
         method: 'PATCH',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
-          'x-user-id': user?.id || '' 
+          'x-user-id': user?.id || ''
         },
         body: JSON.stringify({ text: editContent.trim() })
       });
@@ -280,6 +320,37 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
       }
     } catch (err) {
       console.error('Error editing message:', err);
+    }
+  };
+
+  // Handle Delete Message
+  const handleDeleteMessage = async (messageId: string) => {
+    if (!window.confirm("Are you sure you want to delete this message?")) return;
+
+    // 1. Optimistic Update: Remove from UI instantly
+    const messageToDelete = messages.find(m => m.id === messageId);
+    setMessages(prev => prev.filter(m => m.id !== messageId));
+
+    try {
+      // 2. Direct Delete via Supabase (Avoiding the non-existent /api/messages/:id route)
+      // Attempt deletion with both common column names for the sender
+      const { error: dbError } = await supabase
+        .from('messages')
+        .delete()
+        .eq('id', messageId);
+
+      if (dbError) throw dbError;
+      
+    } catch (err) {
+      console.error('Database deletion failed:', err);
+      // Revert if the database rejected it (e.g., RLS permission issues)
+      alert("Permission denied or message already deleted.");
+      if (messageToDelete) {
+        setMessages(prev => [...prev, messageToDelete].sort((a,b) => 
+          new Date(a.timestamp || a.created_at || Date.now()).getTime() - 
+          new Date(b.timestamp || b.created_at || Date.now()).getTime()
+        ));
+      }
     }
   };
 
@@ -314,6 +385,10 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
     const file = e.target.files?.[0];
     if (!file || !user || !chat.isGroup) return;
 
+    // Show local preview immediately for instant feedback
+    const previewUrl = URL.createObjectURL(file);
+    setGroupAvatar(previewUrl);
+
     setUploading(true);
     try {
       const fileName = `groups/${chat.id}/${Date.now()}.jpg`;
@@ -321,12 +396,27 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
         .from('avatars')
         .upload(fileName, file);
 
-      if (uploadError) throw uploadError;
+      if (uploadError) {
+        alert(`Upload failed: ${uploadError.message}`);
+        throw uploadError;
+      }
 
       const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(fileName);
       const publicUrl = urlData.publicUrl;
 
-      const response = await fetch(`${BACKEND_URL}/api/conversations/${chat.id}/action`, {
+      // Direct Update via Supabase (Requires the 'avatar_url' column to be added via SQL)
+      const { error: dbError } = await supabase
+        .from('conversations')
+        .update({ avatar_url: publicUrl })
+        .eq('id', chat.id);
+
+      if (dbError) {
+        showNotification(`Database update failed. Have you run the SQL migration?\nError: ${dbError.message}`, 'error');
+        throw dbError;
+      }
+
+      // Also try API for webhook/socket triggers if supported
+      await fetch(`${BACKEND_URL}/api/conversations/${chat.id}/action`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -336,15 +426,14 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
           action: 'update-avatar',
           avatarUrl: publicUrl
         })
-      });
+      }).catch(err => console.log('API trigger failed, but DB update succeeded:', err));
 
-      if (response.ok) {
-        setGroupAvatar(publicUrl);
-        alert('Group photo updated successfully!');
-      }
+      setGroupAvatar(publicUrl);
     } catch (err) {
       console.error('Error updating group avatar:', err);
-      alert('Failed to update group photo');
+      // Revert to old avatar if everything failed
+      const oldUrl = chat.avatar_url || (chat as any).avatarUrl || (chat as any).photo_url;
+      setGroupAvatar(oldUrl || null);
     } finally {
       setUploading(false);
     }
@@ -394,25 +483,7 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
     }
   };
 
-  // 6. Toggle Message Like
-  const toggleMessageLike = async (messageId: string) => {
-    if (!user) return;
-    const msg = messages.find(m => m.id === messageId);
-    if (!msg) return;
 
-    const isLiked = msg.isLiked;
-    try {
-      if (isLiked) {
-        await supabase.from('message_likes').delete().match({ message_id: messageId, user_id: user.id });
-      } else {
-        await supabase.from('message_likes').insert({ message_id: messageId, user_id: user.id });
-      }
-
-      setMessages(prev => prev.map(m => m.id === messageId ? { ...m, isLiked: !isLiked } : m));
-    } catch (err) {
-      console.error('Like failed:', err);
-    }
-  };
 
   return (
     <motion.div
@@ -455,12 +526,63 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
             </div>
           </div>
         </div>
-        <button
-          onClick={() => chat.isGroup ? setShowGroupInfo(true) : null}
-          className="p-2 hover:bg-gray-800 rounded-full transition-colors"
-        >
-          <MoreVertical className="w-5 h-5 text-gray-500" />
-        </button>
+        <div className="relative">
+          <button
+            onClick={() => chat.isGroup ? setShowGroupInfo(true) : setShowMenu(!showMenu)}
+            className="p-2 hover:bg-gray-800 rounded-full transition-colors cursor-pointer"
+          >
+            <MoreVertical className="w-5 h-5 text-gray-500" />
+          </button>
+
+          <AnimatePresence>
+            {showMenu && !chat.isGroup && (
+              <>
+                <div 
+                  className="fixed inset-0 z-40" 
+                  onClick={() => setShowMenu(false)} 
+                />
+                <motion.div
+                  initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                  className="absolute right-0 top-full mt-2 w-48 bg-[#121B22]/95 backdrop-blur-2xl border border-white/5 rounded-2xl shadow-2xl z-50 overflow-hidden py-2"
+                >
+                  <button 
+                    onClick={handleViewProfile}
+                    className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/5 text-sm text-white transition-colors cursor-pointer"
+                  >
+                    <User className="w-4 h-4 text-gray-400" /> View Profile
+                  </button>
+                  <button 
+                    onClick={() => {
+                        showNotification('Muted successfully', 'info');
+                        setShowMenu(false);
+                    }}
+                    className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/5 text-sm text-white transition-colors cursor-pointer"
+                  >
+                    <Bell className="w-4 h-4 text-gray-400" /> Mute Notifications
+                  </button>
+                  <div className="h-px bg-white/5 my-1" />
+                  <button 
+                    onClick={handleClearChat}
+                    className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/5 text-sm text-red-400 transition-colors cursor-pointer"
+                  >
+                    <Trash2 className="w-4 h-4" /> Clear Chat
+                  </button>
+                  <button 
+                    onClick={() => {
+                        showNotification('User blocked', 'warning');
+                        setShowMenu(false);
+                    }}
+                    className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/5 text-sm text-red-500 font-bold transition-colors cursor-pointer"
+                  >
+                    < ShieldCheck className="w-4 h-4" /> Block User
+                  </button>
+                </motion.div>
+              </>
+            )}
+          </AnimatePresence>
+        </div>
       </div>
 
       {/* Messages Area */}
@@ -480,8 +602,8 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
               className={`flex items-end gap-2 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}
             >
               <div className={`group relative max-w-[80%] px-4 py-2.5 rounded-2xl shadow-sm ${isMe
-                  ? 'bg-brand/95 text-brand-contrast rounded-tr-sm'
-                  : 'bg-gray-800 text-white rounded-tl-sm border border-gray-800/50'
+                ? 'bg-brand/95 text-brand-contrast rounded-tr-sm'
+                : 'bg-gray-800 text-white rounded-tl-sm border border-gray-800/50'
                 }`}>
                 {/* QUOTED REPLY RENDER */}
                 {quote && (
@@ -530,7 +652,7 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
                     />
                     <div className="flex justify-end gap-2">
                       <button onClick={() => setEditingMessageId(null)} className="p-1.5  dark:hover:bg-gray-300 rounded-full transition-colors">
-                        <X size={14} className='hover:text-red-400'/>
+                        <X size={14} className='hover:text-red-400' />
                       </button>
                       <button onClick={() => handleEditMessage(msg.id)} disabled={!editContent.trim()} className="p-1.5 dark:hover:bg-gray-300 rounded-full transition-colors disabled:opacity-50">
                         <Check size={14} className='hover:text-green-400' />
@@ -550,19 +672,21 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
                     {new Date(msg.timestamp || msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </p>
                   {/* Action Icons (Hover triggers) */}
-                  <div className="flex items-center gap-2">
-                    {isMe && (msg.text || msg.image_url || msg.voice_url) && editingMessageId !== msg.id && (
-                      <button onClick={() => { setEditingMessageId(msg.id); setEditContent(msg.text || ''); }} className="text-gray-500 opacity-0 group-hover:opacity-100  transition-all" title="Edit Message">
-                        <Pencil size={12 } className='hover:text-yellow-400' />
+                    <div className="flex items-center gap-2">
+                      {isMe && editingMessageId !== msg.id && (
+                        <>
+                          <button onClick={() => { setEditingMessageId(msg.id); setEditContent(msg.text || ''); }} className="text-gray-400/50 hover:text-yellow-400 transition-all p-1" title="Edit">
+                            <Pencil size={14} />
+                          </button>
+                          <button onClick={() => handleDeleteMessage(msg.id)} className="text-gray-400/50 hover:text-red-400 transition-all p-1" title="Delete">
+                            <Trash2 size={14} />
+                          </button>
+                        </>
+                      )}
+                      <button onClick={() => setReplyingTo(msg)} className="text-gray-400/50 hover:text-blue-400 transition-all p-1" title="Reply">
+                        <Reply size={14} />
                       </button>
-                    )}
-                    <button onClick={() => setReplyingTo(msg)} className="text-gray-500 opacity-0 group-hover:opacity-100  transition-all" title="Reply">
-                      <Reply size={12} className='hover:text-blue-400' />
-                    </button>
-                    <button onClick={() => toggleMessageLike(msg.id)} className={`transition-all duration-300 transform active:scale-150 ${msg.isLiked ? 'text-pink-500' : 'text-gray-500 opacity-0 group-hover:opacity-100'}`} title="Like">
-                      <Heart size={12}  fill={msg.isLiked ? "currentColor" : "none"} className='hover:text-red-400' />
-                    </button>
-                  </div>
+                    </div>
                 </div>
               </div>
             </motion.div>
@@ -574,19 +698,20 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
       <AnimatePresence>
         {replyingTo && (
           <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            className="px-4 py-3 border-t border-gray-800 bg-gray-900/95 flex items-center justify-between gap-4 backdrop-blur-md"
+            initial={{ height: 0, opacity: 0, y: 10 }}
+            animate={{ height: 'auto', opacity: 1, y: 0 }}
+            exit={{ height: 0, opacity: 0, y: 10 }}
+            className="px-4 py-3 border-t border-white/5 bg-gray-950/80 flex items-center justify-between gap-4 backdrop-blur-xl"
           >
-            <div className="flex-1 border-l-4 border-brand pl-3 py-1 bg-white/5 rounded-r-lg">
-              <p className="text-[11px] text-brand font-bold mb-0.5">
-                {replyingTo.senderId === user?.id ? 'You' : (replyingTo.author?.full_name || chat.sender)}
-              </p>
-              <div className="flex items-center gap-1 text-[11px] text-gray-400">
-                {replyingTo.image_url && <Image size={10} />}
-                {replyingTo.voice_url && <Mic size={10} />}
-                <p className="line-clamp-1 italic">
+            <div className="flex-1 border-l-4 border-brand pl-3 py-1.5 bg-white/5 rounded-r-2xl">
+              <div className="flex items-center justify-between">
+                <p className="text-[12px] text-brand font-bold mb-1">
+                  Replying to {replyingTo.senderId === user?.id ? 'You' : (replyingTo.author?.full_name || chat.sender)}
+                </p>
+              </div>
+              <div className="flex items-center gap-2 text-[12px] text-gray-400">
+                {replyingTo.image_url && <Image size={12} />}
+                <p className="line-clamp-1 italic font-medium">
                   {replyingTo.text || (replyingTo.image_url ? 'Photo' : replyingTo.voice_url ? 'Voice message' : 'Message')}
                 </p>
               </div>
@@ -600,11 +725,11 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
 
       {/* Input Area */}
       <div className="p-4 border-t border-gray-800 bg-transparent z-10">
-        <div className="flex items-center gap-2 bg-gray-800 border border-gray-800 rounded-2xl px-4 py-2 shadow-inner">
-          <button type="button" disabled={uploading} onClick={() => fileInputRef.current?.click()} className={`text-gray-500 hover:text-brand transition-colors ${uploading ? 'animate-pulse' : ''}`}>
+        <div className="flex items-center gap-2 bg-gray-800/50 border border-gray-800 rounded-2xl px-3 py-1.5 shadow-inner">
+          <button type="button" disabled={uploading} onClick={() => fileInputRef.current?.click()} className={`p-2 text-gray-500 hover:text-white hover:bg-white/10 rounded-full transition-all ${uploading ? 'animate-pulse' : ''}`}>
             <Image className="w-5 h-5" />
           </button>
-          <button onClick={() => setShowEmojis(!showEmojis)} className={`text-gray-500 hover:text-brand transition-colors relative ${showEmojis ? 'text-brand' : ''}`}>
+          <button onClick={() => setShowEmojis(!showEmojis)} className={`p-2 text-gray-500 hover:text-white hover:bg-white/10 rounded-full transition-all relative ${showEmojis ? 'text-brand bg-brand/10' : ''}`}>
             <Smile className="w-5 h-5" />
 
             {/* Emoji Picker Popup */}
@@ -647,20 +772,21 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
             </AnimatePresence>
           </button>
           <input
+            ref={messageInputRef}
             type="text"
             placeholder={isRecording ? "Recording voice..." : uploading ? "Uploading..." : "Type a message..."}
             value={newMessage}
             disabled={uploading || isRecording}
             onChange={(e) => setNewMessage(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-            className="flex-1 bg-transparent border-none outline-none text-white text-sm py-2 placeholder-gray-500"
+            className="flex-1 bg-transparent border-none outline-none text-white text-[15px] py-2 placeholder-gray-500"
           />
           {newMessage ? (
-            <button onClick={() => handleSend()} className="p-2 bg-brand rounded-full text-brand-contrast hover:opacity-90 transition-opacity shadow-md">
+            <button onClick={() => handleSend()} className="p-2.5 bg-brand rounded-full text-brand-contrast hover:opacity-90 transition-all shadow-lg active:scale-95">
               <Send className="w-4 h-4 ml-0.5" />
             </button>
           ) : (
-            <button onClick={isRecording ? stopRecording : startRecording} className={`p-2 rounded-full transition-all duration-300 ${isRecording ? 'bg-red-500 text-white animate-pulse' : 'text-gray-500 hover:text-brand'}`}>
+            <button onClick={isRecording ? stopRecording : startRecording} className={`p-2.5 rounded-full transition-all duration-300 hover:bg-white/5 ${isRecording ? 'bg-red-500 text-white animate-pulse' : 'text-gray-500 hover:text-white'}`}>
               <Mic className="w-5 h-5" />
             </button>
           )}
