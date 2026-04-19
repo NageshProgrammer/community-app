@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Send, ArrowLeft, MoreVertical, Image, Smile, Mic, Reply, X, UserMinus, ShieldCheck, LogOut, Plus, Search, Camera, Pencil, Check, Trash2, User, Bell } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../../context/AuthContext';
@@ -31,6 +32,7 @@ const COMMON_EMOJIS = [
 
 
 export default function Conversation({ chat, onBack }: ConversationProps) {
+  const navigate = useNavigate();
   const { user } = useAuth();
   const { showNotification } = useNotification();
   const [messages, setMessages] = useState<any[]>([]);

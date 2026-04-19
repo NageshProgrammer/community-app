@@ -1,4 +1,4 @@
-import { Search, Globe, Zap, Users, MoreHorizontal, ArrowUpRight } from 'lucide-react';
+import { Search, Globe, Zap, Users, ArrowUpRight } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useState } from 'react';
 import { useSocial } from '../../context/SocialContext';

@@ -1,7 +1,7 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { MessageCircle, Repeat, Heart, Share, MoreHorizontal, MapPin, Trash2, Link as LinkIcon, Send, Pencil, Smile, Image, Globe } from 'lucide-react';
+import { MessageCircle, Repeat, Heart, Share, MoreHorizontal, MapPin, Trash2, Link as LinkIcon, Send, Pencil, Smile, Image } from 'lucide-react';
 import { usePosts, type CommentData, type PostData } from '../../context/PostContext';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';

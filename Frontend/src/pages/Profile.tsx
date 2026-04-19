@@ -13,7 +13,7 @@ import { Post } from "../components/feed/Post";
 import { type PostData } from "../context/PostContext";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "../utils/supabase";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, Link } from "react-router-dom";
 import { useSocial } from "../context/SocialContext";
 import { usePosts } from "../context/PostContext";
 import { useNotification } from "../context/NotificationContext";
@@ -264,6 +264,7 @@ export function Profile() {
                     avatar: authorProfile?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${post.author_id}`,
                   },
                   content: post.content,
+                  created_at: post.created_at,
                   timestamp: new Date(post.created_at).toLocaleString(),
                   likes: post.likes?.[0]?.count || 0,
                   comments: post.comments?.[0]?.count || 0,
@@ -287,10 +288,11 @@ export function Profile() {
                     },
                     content: post.original_post.content,
                     timestamp: new Date(post.original_post.created_at).toLocaleString(),
-                   likes: post.original_post.likes?.[0]?.count || 0,
-                   comments: post.original_post.comments?.[0]?.count || 0,
-                   reposts: post.original_post.reposts?.[0]?.count || 0,
-                   image: post.original_post.image
+                    created_at: post.original_post.created_at,
+                    likes: post.original_post.likes?.[0]?.count || 0,
+                    comments: post.original_post.comments?.[0]?.count || 0,
+                    reposts: post.original_post.reposts?.[0]?.count || 0,
+                    image: post.original_post.image
                   } : null
                };
             }
