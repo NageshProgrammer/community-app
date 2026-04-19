@@ -1,0 +1,228 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Manrope:wght@400;500;600;700&display=swap');
+
+@import "tailwindcss";
+
+:root {
+  /* Dark Mode Defaults (Monochrome) */
+  --color-brand: #ffffff;
+  --color-brand-contrast: #000000;
+  --color-dark: #000000;
+  --color-text-main: #ffffff;
+}
+
+@layer base {
+  /* Light Mode Variables */
+  :root {
+    --background: 0 0% 98%;
+    --foreground: 0 0% 7%;
+    --border: 0 0% 88%;
+    --font-display: 'Space Grotesk', sans-serif;
+    --font-body: 'Manrope', sans-serif;
+  }
+}
+
+@layer base {
+  /* Dark Mode Variables */
+  .dark-theme, :root.dark-theme {
+    --background: 0 0% 0%;
+    --foreground: 0 0% 100%;
+    --border: 0 0% 15%;
+  }
+  
+  * {
+    border-color: hsl(var(--border));
+  }
+}
+
+/* =========================================
+   GLOBAL AMBIENT ANIMATED BACKGROUND
+   ========================================= */
+body {
+  background-color: var(--color-dark);
+  color: var(--color-text-main);
+  font-family: var(--font-body);
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  transition: background-color 0.4s ease, color 0.4s ease;
+  position: relative;
+}
+
+/* The Animated Mesh Layer */
+body::before {
+  content: "";
+  position: fixed;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  z-index: -10; /* Stays securely behind everything */
+  pointer-events: none;
+  
+  /* Dark Mode: Deep, premium nebulas (Sapphire, Purple, Teal) */
+  background:
+    radial-gradient(circle at 50% 50%, rgba(30, 58, 138, 0.15), transparent 40%),
+    radial-gradient(circle at 80% 20%, rgba(88, 28, 135, 0.12), transparent 30%),
+    radial-gradient(circle at 20% 80%, rgba(15, 118, 110, 0.12), transparent 40%);
+  
+  /* Smooth 25-second rotation loop */
+  animation: ambientDrift 25s linear infinite;
+}
+
+/* Light Mode Mesh Layer */
+.light-theme body::before {
+  /* Light Mode: Soft macOS-style pastels (Sky Blue, Lavender, Peach) */
+  background:
+    radial-gradient(circle at 50% 50%, rgba(186, 230, 253, 0.8), transparent 45%),
+    radial-gradient(circle at 80% 20%, rgba(233, 213, 255, 0.6), transparent 35%),
+    radial-gradient(circle at 20% 80%, rgba(254, 215, 170, 0.5), transparent 45%);
+}
+
+/* The slow, continuous rotation keyframes */
+@keyframes ambientDrift {
+  0% { transform: rotate(0deg) translate(0, 0) scale(1); }
+  33% { transform: rotate(120deg) translate(3%, 3%) scale(1.05); }
+  66% { transform: rotate(240deg) translate(-3%, -3%) scale(0.95); }
+  100% { transform: rotate(360deg) translate(0, 0) scale(1); }
+}
+
+
+/* =========================================
+   LIQUID GLASS PANELS (DARK MODE)
+   ========================================= */
+.bg-gray-900,
+.bg-dark\/80 {
+  background-color: rgba(15, 15, 15, 0.45) !important;
+  backdrop-filter: blur(24px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(180%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.06) !important;
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4) !important;
+}
+
+.bg-gray-800 {
+  background-color: rgba(30, 30, 30, 0.35) !important;
+  backdrop-filter: blur(12px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(12px) saturate(180%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.04) !important;
+}
+
+/* Premium Messaging Utilities */
+.message-bubble-current {
+  background: linear-gradient(135deg, #1d9bf0 0%, #0076c5 100%);
+  border-radius: 20px 20px 4px 20px;
+  box-shadow: 0 4px 12px rgba(29, 155, 240, 0.2);
+}
+
+.message-bubble-other {
+  background: var(--card-bg);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 20px 20px 20px 4px;
+}
+
+.chat-active-gradient {
+  background: linear-gradient(90deg, rgba(29, 155, 240, 0.1) 0%, transparent 100%);
+  border-left: 3px solid #1d9bf0;
+}
+
+.glass-search {
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.glass-search:focus {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: #1d9bf0;
+  box-shadow: 0 0 20px rgba(29, 155, 240, 0.15);
+}
+
+.border-gray-800 {
+  border-color: rgba(255, 255, 255, 0.06) !important;
+}
+
+.hover\:bg-gray-900:hover,
+.hover\:bg-gray-800:hover {
+  background-color: rgba(60, 60, 60, 0.3) !important;
+}
+
+/* =========================================
+   LIQUID GLASS PANELS (LIGHT MODE)
+   ========================================= */
+.light-theme {
+  --color-brand: #0f1419; 
+  --color-brand-contrast: #ffffff; 
+  --color-dark: #f8fafc; /* Beautiful clean off-white base */
+  --color-text-main: #0f1419; 
+}
+
+.light-theme .bg-gray-900,
+.light-theme .bg-dark\/80 {
+  background-color: rgba(255, 255, 255, 0.6) !important;
+  backdrop-filter: blur(24px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(180%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.8) !important;
+  box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.05) !important;
+}
+
+.light-theme .bg-gray-800 {
+  background-color: rgba(255, 255, 255, 0.4) !important;
+  backdrop-filter: blur(12px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(12px) saturate(180%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.5) !important;
+}
+
+.light-theme .border-gray-800 {
+  border-color: rgba(0, 0, 0, 0.05) !important;
+}
+
+/* ✨ THE FIX: Catch ALL gray hover states and force them to be light frosted glass! */
+.light-theme [class*="hover:bg-gray-"]:hover,
+.light-theme [class*="hover:bg-dark"]:hover {
+  background-color: rgba(255, 255, 255, 0.9) !important;
+  backdrop-filter: blur(24px) saturate(180%) !important;
+}
+
+/* ✨ THE FIX: Catch ALL white/gray text and force them to dark gray/black in Light Mode! */
+.light-theme .text-gray-500,
+.light-theme .text-gray-400 {
+  color: #536471 !important;
+}
+
+/* Catch lighter grays that usually appear in post content */
+.light-theme .text-gray-300,
+.light-theme .text-gray-200,
+.light-theme .text-gray-100 {
+  color: #0f1419 !important; 
+}
+
+/* Catch white text, but ignore our dynamic brand buttons */
+.light-theme .text-white:not(.bg-brand):not(.text-brand-contrast) {
+  color: #0f1419 !important;
+}
+
+/* Fix "Follow" buttons specifically */
+.light-theme .bg-white {
+  background-color: #0f1419 !important;
+  color: #ffffff !important;
+}
+
+/* Hide scrollbars */
+.hide-scrollbar::-webkit-scrollbar { display: none; }
+.hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* =========================================
+   GLOBAL SCROLLBAR HIDING
+   ========================================= */
+
+/* Hide scrollbar for Chrome, Safari and Opera */
+*::-webkit-scrollbar {
+  display: none !important;
+}
+
+/* Hide scrollbar for IE, Edge and Firefox */
+* {
+  -ms-overflow-style: none !important;  /* IE and Edge */
+  scrollbar-width: none !important;  /* Firefox */
+}

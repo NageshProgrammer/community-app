@@ -1,0 +1,20 @@
+{
+    "name": "community-rightsignal",
+    "private": true,
+    "version": "1.0.0",
+    "workspaces": [
+        "Frontend",
+        "Backend"
+    ],
+    "engines": {
+        "node": ">=20.19.0"
+    },
+    "scripts": {
+        "build": "npm install --workspaces && npm run build --workspace Frontend && npm run build --workspace Backend",
+        "start": "node Backend/dist/index.js",
+        "dev": "concurrently \"npm run dev --workspace Backend\" \"npm run dev --workspace Frontend\""
+    },
+    "devDependencies": {
+        "concurrently": "^8.2.2"
+    }
+}
