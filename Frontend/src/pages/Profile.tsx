@@ -13,7 +13,7 @@ import { Post } from "../components/feed/Post";
 import { type PostData } from "../context/PostContext";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "../utils/supabase";
-import { useParams, useNavigate, Link } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import { useSocial } from "../context/SocialContext";
 import { usePosts } from "../context/PostContext";
 import { useNotification } from "../context/NotificationContext";
