@@ -40,6 +40,22 @@ const formatChatTimestamp = (value?: string) => {
   return parsed.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 };
 
+const resolveChatAvatarUrl = (convo: any, isGroup: boolean) => {
+  if (isGroup) {
+    return convo.avatar_url || convo.avatarurl || convo.group_avatar_url || convo.groupAvatarUrl;
+  }
+
+  const profile = convo.profile || convo.user || convo.other_user || convo.otherUser;
+  return (
+    profile?.avatar_url ||
+    profile?.avatar ||
+    convo.avatar_url ||
+    convo.avatarurl ||
+    convo.other_user_avatar_url ||
+    convo.otherUserAvatarUrl
+  );
+};
+
 const mapConversationToChat = (convo: any, currentUserId?: string): Chat => {
   const isGroup = Boolean(convo.is_group);
   const profile = convo.profile;
@@ -50,7 +66,7 @@ const mapConversationToChat = (convo: any, currentUserId?: string): Chat => {
     sender,
     avatarColor: 'bg-brand',
     initials: sender.substring(0, 1).toUpperCase(),
-    avatar_url: isGroup ? (convo.avatar_url || convo.avatarurl) : profile?.avatar_url,
+    avatar_url: resolveChatAvatarUrl(convo, isGroup),
     lastMessage: convo.lastmessage || convo.lastMessage || convo.last_message || 'No messages yet',
     timestamp: formatChatTimestamp(convo.updatedAt || convo.updatedat || convo.updated_at),
     unreadCount: convo.unreadCount || 0,
@@ -89,18 +105,26 @@ export default function Messages() {
     if (!user) return;
 
     if (initialData?.conversations) {
-      const enrichedChats = (initialData.conversations || []).map((convo: any) =>
-        mapConversationToChat(convo, user.id)
-      );
-      setChats(enrichedChats);
+      setChats(prev => {
+        const previousById = new Map(prev.map(chat => [chat.id, chat]));
+        return (initialData.conversations || []).map((convo: any) => {
+          const mappedChat = mapConversationToChat(convo, user.id);
+          const existingChat = previousById.get(mappedChat.id);
+
+          return existingChat?.avatar_url && !mappedChat.avatar_url
+            ? { ...mappedChat, avatar_url: existingChat.avatar_url }
+            : mappedChat;
+        });
+      });
       setLoading(false);
-      return;
     }
 
     const fetchConversations = async () => {
-      setLoading(true);
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 6000); // 6s timeout rescue
+      if (!initialData?.conversations) {
+        setLoading(true);
+      }
 
       try {
         const BACKEND_URL = (import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || 'http://localhost:10000').replace(/\/$/, '');
@@ -114,22 +138,81 @@ export default function Messages() {
         
         const data = await response.json();
         
-        const enrichedChats = (data || []).map((convo: any) =>
-          mapConversationToChat(convo, user.id)
-        );
+        setChats(prev => {
+          const previousById = new Map(prev.map(chat => [chat.id, chat]));
+          return (data || []).map((convo: any) => {
+            const mappedChat = mapConversationToChat(convo, user.id);
+            const existingChat = previousById.get(mappedChat.id);
 
-        setChats(enrichedChats);
+            return existingChat?.avatar_url && !mappedChat.avatar_url
+              ? { ...mappedChat, avatar_url: existingChat.avatar_url }
+              : mappedChat;
+          });
+        });
       } catch (err) {
         console.error('Error fetching conversations:', err);
-        // Fallback: If network is dead, at least stop loading
-        if (chats.length === 0) setChats([]); 
       } finally {
+        clearTimeout(timeoutId);
         setLoading(false);
       }
     };
 
     fetchConversations();
   }, [user, initialData]);
+
+  useEffect(() => {
+    if (!user || chats.length === 0) return;
+
+    const missingAvatarUserIds = [...new Set(
+      chats
+        .filter(chat => !chat.isGroup && !chat.avatar_url && chat.targetUserId)
+        .map(chat => chat.targetUserId as string)
+    )];
+
+    if (missingAvatarUserIds.length === 0) return;
+
+    const hydrateMissingAvatars = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('id, avatar_url, full_name, username')
+          .in('id', missingAvatarUserIds);
+
+        if (error) throw error;
+
+        const profilesById = new Map((data || []).map(profile => [profile.id, profile]));
+
+        setChats(prev => {
+          let hasChanges = false;
+
+          const nextChats = prev.map(chat => {
+            if (chat.isGroup || chat.avatar_url || !chat.targetUserId) {
+              return chat;
+            }
+
+            const profile = profilesById.get(chat.targetUserId);
+            if (!profile?.avatar_url) {
+              return chat;
+            }
+
+            hasChanges = true;
+            return {
+              ...chat,
+              avatar_url: profile.avatar_url,
+              sender: chat.sender === 'User' ? (profile.full_name || profile.username || chat.sender) : chat.sender,
+              initials: (profile.full_name || profile.username || chat.sender).substring(0, 1).toUpperCase()
+            };
+          });
+
+          return hasChanges ? nextChats : prev;
+        });
+      } catch (err) {
+        console.error('Error hydrating missing message avatars:', err);
+      }
+    };
+
+    hydrateMissingAvatars();
+  }, [user, chats]);
 
   const initializingChat = useRef(false);
 
@@ -288,8 +371,8 @@ export default function Messages() {
 
   const filteredFollowers = useMemo(() => {
     return followingList.filter(u => 
-      u.full_name.toLowerCase().includes(followerSearch.toLowerCase()) ||
-      u.username.toLowerCase().includes(followerSearch.toLowerCase())
+      (u.full_name || '').toLowerCase().includes(followerSearch.toLowerCase()) ||
+      (u.username || '').toLowerCase().includes(followerSearch.toLowerCase())
     );
   }, [followingList, followerSearch]);
 
