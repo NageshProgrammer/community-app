@@ -14,8 +14,12 @@ const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: {
     origin: '*',
-    methods: ['GET', 'POST', 'PATCH', 'DELETE']
-  }
+    methods: ['GET', 'POST', 'PATCH', 'DELETE'],
+    credentials: true
+  },
+  transports: ['websocket', 'polling'], // Allow both but prefer websocket if client asks
+  pingTimeout: 60000, // Increase for free tier stability
+  pingInterval: 25000
 });
 
 const PORT = process.env.PORT || 10000;
@@ -208,8 +212,8 @@ app.get('/api/conversations/with/:targetUserId', async (req, res) => {
       updatedAt: existing.updatedat,
       lastMessage: existing.lastmessage
     });
-  } catch (err) {
-    console.error('Error finding conversation:', err);
+  } catch (err: any) {
+    console.error('Error finding conversation:', err.message || err, err);
     res.status(500).json({ error: 'Failed' });
   }
 });
@@ -259,11 +263,11 @@ app.post('/api/conversations', async (req, res) => {
         .single();
 
       if (insError) {
-        console.error('DATABASE INSERT ERROR (DM):', insError.message);
+        console.error('DATABASE INSERT ERROR (DM):', insError.message, insError.code, insError.details);
         // Better error response for the UI to show
         return res.status(500).json({ 
           error: 'Security Policy Violation', 
-          details: 'Please ensure you have run the latest SQL migration in Supabase to allow chat creation.',
+          details: insError.message || 'Please ensure you have run the latest SQL migration in Supabase to allow chat creation.',
           code: insError.code 
         });
       }
@@ -550,7 +554,11 @@ app.post('/api/messages', async (req, res) => {
 const onlineUsers = new Map<string, string>();
 
 io.on('connection', (socket) => {
+  console.log(`🔌 New client connected: ${socket.id}`);
+
   socket.on('authenticate', (userId: string) => {
+    if (!userId) return;
+    console.log(`👤 User authenticated: ${userId} (Socket: ${socket.id})`);
     onlineUsers.set(userId, socket.id);
     io.emit('user_status_change', { userId, status: 'online' });
   });

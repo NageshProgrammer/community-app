@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState } from 'react';
+import { lazy, Suspense, useState, useEffect } from 'react';
 import { Routes, Route, useLocation, Navigate } from 'react-router-dom';
 import { AnimatePresence } from 'framer-motion';
 
@@ -15,6 +15,7 @@ import { BottomNav } from './components/layout/BottomNav';
 import { MobileDrawer } from './components/layout/MobileDrawer';
 import { RightSidebar } from './components/layout/RightSidebar';
 import { PostModal } from './components/shared/PostModal';
+import { socket, authenticateSocket } from './utils/socket';
 
 // Lazy Load Pages
 const Home = lazy(() => import('./pages/Home').then(m => ({ default: m.Home })));
@@ -34,6 +35,27 @@ function AppContent() {
 
   // Destructure loading from useAuth to prevent the race condition
   const { user, loading } = useAuth();
+
+  // Socket Authentication & Logging
+  useEffect(() => {
+    if (user) {
+      authenticateSocket(user.id);
+      
+      const onConnect = () => console.log('🟢 Socket connected');
+      const onDisconnect = () => console.log('🔴 Socket disconnected');
+      const onConnectError = (err: any) => console.error('⚠️ Socket connection error:', err.message);
+
+      socket.on('connect', onConnect);
+      socket.on('disconnect', onDisconnect);
+      socket.on('connect_error', onConnectError);
+
+      return () => {
+        socket.off('connect', onConnect);
+        socket.off('disconnect', onDisconnect);
+        socket.off('connect_error', onConnectError);
+      };
+    }
+  }, [user]);
 
   // 1. THE FIX: Wait for Supabase to finish checking the URL token before routing
   if (loading) {
