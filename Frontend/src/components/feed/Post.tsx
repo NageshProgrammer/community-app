@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { useState, useEffect, useRef } from 'react';
+import React, { memo, useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { MessageCircle, Repeat, Heart, Share, MoreHorizontal, MapPin, Trash2, Link as LinkIcon, Send, Pencil, Smile, Image } from 'lucide-react';
 import { usePosts, type CommentData, type PostData } from '../../context/PostContext';
@@ -19,7 +19,7 @@ interface PostProps {
   setActiveDropdownId: (id: string | null) => void;
 }
 
-export function Post({ post, index, onLike, onRepost, onComment, onDelete, onEdit, activeDropdownId, setActiveDropdownId }: PostProps) {
+export const Post = memo(function Post({ post, index, onLike, onRepost, onComment, onDelete, onEdit, activeDropdownId, setActiveDropdownId }: PostProps) {
   const { showNotification } = useNotification();
   const [commentText, setCommentText] = useState('');
   const [showCommentInput, setShowCommentInput] = useState(false);
@@ -596,7 +596,7 @@ export function Post({ post, index, onLike, onRepost, onComment, onDelete, onEdi
 
     </motion.article>
   );
-}
+});
 
 interface ActionIconProps {
   icon: React.ComponentType<{ className?: string; size?: number; fill?: string }>;

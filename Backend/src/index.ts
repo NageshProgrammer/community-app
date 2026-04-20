@@ -43,7 +43,7 @@ app.get('/api/bootstrap', async (req, res) => {
 
   try {
     // Parallelize all heavy lifting
-    const [profileRes, convRes, notifRes, postsRes] = await Promise.all([
+    const [profileRes, convRes, notifRes, postsRes, followRes] = await Promise.all([
       supabase.from('profiles').select('*').eq('id', userId).maybeSingle(),
       supabase.from('conversations').select('*').contains('participants', [userId]).limit(10),
       supabase.from('notifications').select('*').eq('user_id', userId).order('created_at', { ascending: false }).limit(10),
@@ -53,7 +53,8 @@ app.get('/api/bootstrap', async (req, res) => {
         likesCount:post_likes(count),
         repostsCount:post_reposts(count),
         commentsCount:post_comments(count)
-      `).order('created_at', { ascending: false }).limit(20)
+      `).order('created_at', { ascending: false }).limit(20),
+      supabase.from('follows').select('following_user_id').eq('follower_id', userId)
     ]);
 
     // 1. Enrich Conversations
@@ -95,7 +96,8 @@ app.get('/api/bootstrap', async (req, res) => {
       profile: profileRes.data,
       conversations,
       notifications: notifRes.data || [],
-      posts
+      posts,
+      following: (followRes.data || []).map((f: any) => f.following_user_id)
     };
 
     // 2. Store in Cache
@@ -588,6 +590,7 @@ if (fs.existsSync(frontendDistPath)) {
   });
 }
 
-httpServer.listen(PORT, () => {
-  console.log(`🚀 Backend running on port ${PORT} with Supabase DB`);
+httpServer.listen(Number(PORT), '0.0.0.0', () => {
+  console.log(`🚀 Backend running on http://localhost:${PORT}`);
+  console.log(`✅ Supabase DB connection initialized`);
 });

@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { supabase } from '../utils/supabase';
 import { useAuth } from './AuthContext';
 import { useNotification } from './NotificationContext';
+import { useData } from './DataContext';
 
 interface SocialContextType {
   followingIds: string[];
@@ -19,6 +20,7 @@ const SocialContext = createContext<SocialContextType | undefined>(undefined);
 export function SocialProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const { showNotification } = useNotification();
+  const { initialData } = useData();
   const [followingIds, setFollowingIds] = useState<string[]>([]);
   const [followerCounts, setFollowerCounts] = useState<Record<string, number>>({});
   const [searchQuery, setSearchQuery] = useState('');
@@ -27,6 +29,11 @@ export function SocialProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!user) {
       setFollowingIds([]);
+      return;
+    }
+
+    if (initialData?.following) {
+      setFollowingIds(initialData.following);
       return;
     }
 
@@ -44,7 +51,7 @@ export function SocialProvider({ children }: { children: ReactNode }) {
     };
 
     fetchFollowing();
-  }, [user]);
+  }, [user, initialData]);
 
   // FIXED: Defaulted currentCountOnUI to 0 if not provided
   const toggleFollow = async (targetId: string, currentCountOnUI: number = 0) => {

@@ -1,5 +1,4 @@
-// src/App.tsx
-import { useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import { Routes, Route, useLocation, Navigate } from 'react-router-dom';
 import { AnimatePresence } from 'framer-motion';
 
@@ -17,16 +16,16 @@ import { MobileDrawer } from './components/layout/MobileDrawer';
 import { RightSidebar } from './components/layout/RightSidebar';
 import { PostModal } from './components/shared/PostModal';
 
-// Pages
-import { Home } from './pages/Home';
-import { Profile } from './pages/Profile';
-import Notifications from './pages/Notifications';
-import { Placeholder } from './pages/PlaceHolder';
-import Messages from './pages/Messages';
-import HelpCenter from './pages/HelpCenter';
-import Settings from './pages/Settings';
-import Login from './pages/Login';
-import Signup from './pages/Signup';
+// Lazy Load Pages
+const Home = lazy(() => import('./pages/Home').then(m => ({ default: m.Home })));
+const Profile = lazy(() => import('./pages/Profile').then(m => ({ default: m.Profile })));
+const Notifications = lazy(() => import('./pages/Notifications'));
+const Messages = lazy(() => import('./pages/Messages'));
+const HelpCenter = lazy(() => import('./pages/HelpCenter'));
+const Settings = lazy(() => import('./pages/Settings'));
+const Placeholder = lazy(() => import('./pages/PlaceHolder').then(m => ({ default: m.Placeholder })));
+const Login = lazy(() => import('./pages/Login'));
+const Signup = lazy(() => import('./pages/Signup'));
 
 function AppContent() {
   const location = useLocation();
@@ -81,16 +80,22 @@ function AppContent() {
 
 
           <AnimatePresence mode="wait">
-            <Routes location={location} key={location.pathname}>
-              <Route path="/community" element={<Home />} />
-              <Route path="/messages" element={<Messages />} />
-              <Route path="/notifications" element={<Notifications />} />
-              <Route path="/profile" element={<Profile />} />
-              <Route path="/profile/:id" element={<Profile />} />
-              <Route path="/help" element={<HelpCenter />} />
-              <Route path="/settings" element={<Settings />} />
-              <Route path="*" element={<Placeholder title="Page not found" />} />
-            </Routes>
+            <Suspense fallback={
+              <div className="flex items-center justify-center h-screen">
+                <div className="w-8 h-8 border-4 border-brand border-t-transparent rounded-full animate-spin" />
+              </div>
+            }>
+              <Routes location={location} key={location.pathname}>
+                <Route path="/community" element={<Home />} />
+                <Route path="/messages" element={<Messages />} />
+                <Route path="/notifications" element={<Notifications />} />
+                <Route path="/profile" element={<Profile />} />
+                <Route path="/profile/:id" element={<Profile />} />
+                <Route path="/help" element={<HelpCenter />} />
+                <Route path="/settings" element={<Settings />} />
+                <Route path="*" element={<Placeholder title="Page not found" />} />
+              </Routes>
+            </Suspense>
           </AnimatePresence>
         </main>
 

@@ -6,6 +6,7 @@ interface DataContextType {
   initialData: any;
   loadingData: boolean;
   refreshAll: () => Promise<void>;
+  error: string | null;
 }
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
@@ -14,20 +15,28 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const [initialData, setInitialData] = useState<any>(null);
   const [loadingData, setLoadingData] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
 
   const refreshAll = useCallback(async () => {
     if (!user) return;
     setLoadingData(true);
+    setError(null);
     try {
-      const url = new URL(`${import.meta.env.VITE_BACKEND_URL || 'http://localhost:10000'}/api/bootstrap`);
-      // We use a ref-like approach to get the latest lastFetched without triggering dependencies
+      const backendBaseUrl = (import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || 'http://localhost:10000').replace(/\/$/, '');
+      const url = new URL(`${backendBaseUrl}/api/bootstrap`);
+      
       const currentLastFetched = localStorage.getItem('last_bootstrap_time');
       if (currentLastFetched) url.searchParams.append('since', currentLastFetched);
 
       const response = await fetch(url.toString(), {
         headers: { 'x-user-id': user.id }
       });
+      
+      if (!response.ok) {
+        throw new Error(`Server responded with ${response.status}`);
+      }
+      
       const data = await response.json();
 
       setInitialData((prev: any) => {
@@ -46,22 +55,23 @@ export function DataProvider({ children }: { children: ReactNode }) {
       }
     } catch (err) {
       console.error('Failed to bootstrap data:', err);
+      setError(err instanceof Error ? err.message : 'Connection failed');
     } finally {
       setLoadingData(false);
     }
-  }, [user]); // Removed initialData and lastFetched dependencies to stop loops
+  }, [user]);
 
   useEffect(() => {
-    if (user && !initialData) {
+    if (user && !initialData && !loadingData) {
       refreshAll();
     } else if (!user) {
       setInitialData(null);
       localStorage.removeItem('last_bootstrap_time');
     }
-  }, [user, refreshAll, initialData]);
+  }, [user, refreshAll, initialData, loadingData]);
 
   return (
-    <DataContext.Provider value={{ initialData, loadingData, refreshAll }}>
+    <DataContext.Provider value={{ initialData, loadingData, refreshAll, error }}>
       {children}
     </DataContext.Provider>
   );

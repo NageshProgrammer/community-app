@@ -1,7 +1,9 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import type { ReactNode } from 'react';
 import { useAuth } from './AuthContext';
+import { useData } from './DataContext';
 import { supabase } from '../utils/supabase';
+import { compressImage } from '../utils/imageCompressor';
 
 export interface PostData {
   id: string;
@@ -69,7 +71,16 @@ export function PostProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const { initialData } = useData();
+
   const fetchPosts = useCallback(async () => {
+    // If we have initial data from bootstrap, use it immediately
+    if (initialData?.posts && posts.length === 0) {
+      setPosts(initialData.posts);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     setError(null);
     try {
@@ -181,7 +192,7 @@ export function PostProvider({ children }: { children: ReactNode }) {
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [user, initialData, posts.length]);
 
   useEffect(() => {
     fetchPosts();
@@ -199,9 +210,13 @@ export function PostProvider({ children }: { children: ReactNode }) {
       let publicImageUrl = null;
       try {
         if (image && image.startsWith("blob:")) {
-          const imageBlob = await fetch(image).then((r) => r.blob());
+          const imageBlobOriginal = await fetch(image).then((r) => r.blob());
+          // Convert Blob to File for the compressor
+          const imageFile = new File([imageBlobOriginal], "post-image.jpg", { type: "image/jpeg" });
+          const compressedBlob = await compressImage(imageFile);
+          
           const fileName = `${userId}/${Date.now()}.jpg`;
-          const { error: uploadError } = await supabase.storage.from("posts").upload(fileName, imageBlob);
+          const { error: uploadError } = await supabase.storage.from("posts").upload(fileName, compressedBlob);
           if (uploadError) throw uploadError;
           const { data: urlData } = supabase.storage.from("posts").getPublicUrl(fileName);
           publicImageUrl = urlData.publicUrl;

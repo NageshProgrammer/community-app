@@ -17,6 +17,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useSocial } from "../context/SocialContext";
 import { usePosts } from "../context/PostContext";
 import { useNotification } from "../context/NotificationContext";
+import { compressImage } from "../utils/imageCompressor";
 
 const TABS = ["Posts", "Reposts", "Replies", "Likes"];
 
@@ -355,9 +356,9 @@ export function Profile() {
 
       // Upload Avatar
       if (avatarFile) {
-        const fileExt = avatarFile.name.split(".").pop();
-        const fileName = `avatars/${currentUser.id}-${Date.now()}.${fileExt}`;
-        const { error: uploadError } = await supabase.storage.from("avatars").upload(fileName, avatarFile);
+        const compressedAvatar = await compressImage(avatarFile);
+        const fileName = `avatars/${currentUser.id}-${Date.now()}.jpg`;
+        const { error: uploadError } = await supabase.storage.from("avatars").upload(fileName, compressedAvatar);
         if (uploadError) throw uploadError;
         const { data: { publicUrl } } = supabase.storage.from("avatars").getPublicUrl(fileName);
         finalAvatarUrl = publicUrl;
@@ -365,9 +366,9 @@ export function Profile() {
 
       // Upload Cover
       if (coverFile) {
-        const fileExt = coverFile.name.split(".").pop();
-        const fileName = `covers/${currentUser.id}-${Date.now()}.${fileExt}`;
-        const { error: uploadError } = await supabase.storage.from("avatars").upload(fileName, coverFile); // Using avatars bucket for simplicity or separate
+        const compressedCover = await compressImage(coverFile);
+        const fileName = `covers/${currentUser.id}-${Date.now()}.jpg`;
+        const { error: uploadError } = await supabase.storage.from("avatars").upload(fileName, compressedCover); 
         if (uploadError) throw uploadError;
         const { data: { publicUrl } } = supabase.storage.from("avatars").getPublicUrl(fileName);
         finalCoverUrl = publicUrl;
@@ -491,40 +492,42 @@ export function Profile() {
       </header>
 
       {/* Banner Area */}
-      <div className="relative h-32 sm:h-48 bg-gray-800 overflow-hidden">
-        {coverUrl ? (
-           <img src={coverUrl} className="w-full h-full object-cover" alt="Cover" />
-        ) : (
-           <div className="w-full h-full bg-gradient-to-r from-brand to-blue-900" />
-        )}
-
-        <AnimatePresence>
-          {isEditing && (
-             <motion.div 
-               initial={{ opacity: 0 }}
-               animate={{ opacity: 1 }}
-               className="absolute inset-0 bg-black/40 flex items-center justify-center gap-3"
-             >
-                <input type="file" ref={coverInputRef} className="hidden" accept="image/*" onChange={handleCoverChange} />
-                <button 
-                  onClick={() => coverInputRef.current?.click()}
-                  className="p-3 bg-white/20 backdrop-blur-md rounded-full text-white hover:bg-white/40 transition-all border border-white/30"
-                >
-                   <Camera size={24} />
-                </button>
-                {coverUrl && (
-                  <button 
-                    onClick={handleRemoveCover}
-                    className="p-3 bg-red-500/20 backdrop-blur-md rounded-full text-red-400 hover:bg-red-500/40 transition-all border border-red-500/30"
-                  >
-                     <X size={24} />
-                  </button>
-                )}
-             </motion.div>
+      <div className="relative">
+        <div className="relative h-32 sm:h-48 bg-gray-800 overflow-hidden z-10">
+          {coverUrl ? (
+            <img src={coverUrl} className="w-full h-full object-cover" alt="Cover" />
+          ) : (
+            <div className="w-full h-full bg-gradient-to-r from-brand to-blue-900" />
           )}
-        </AnimatePresence>
 
-        {/* AVATAR WRAPPER */}
+          <AnimatePresence>
+            {isEditing && (
+              <motion.div 
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="absolute inset-0 bg-black/40 flex items-center justify-center gap-3 z-10"
+              >
+                  <input type="file" ref={coverInputRef} className="hidden" accept="image/*" onChange={handleCoverChange} />
+                  <button 
+                    onClick={() => coverInputRef.current?.click()}
+                    className="p-3 bg-white/20 backdrop-blur-md rounded-full text-white hover:bg-white/40 transition-all border border-white/30"
+                  >
+                     <Camera size={24} />
+                  </button>
+                  {coverUrl && (
+                    <button 
+                      onClick={handleRemoveCover}
+                      className="p-3 bg-red-500/20 backdrop-blur-md rounded-full text-red-400 hover:bg-red-500/40 transition-all border border-red-500/30"
+                    >
+                       <X size={24} />
+                    </button>
+                  )}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
+        {/* AVATAR WRAPPER - Now outside overflow-hidden but absolutely positioned */}
         <div 
           onClick={() => !isEditing && setShowAvatarModal(true)}
           className={`absolute -bottom-16 left-4 w-32 h-32 bg-white dark:bg-dark rounded-full border-4 border-white dark:border-dark overflow-hidden z-20 group shadow-lg ${!isEditing ? 'cursor-zoom-in hover:scale-[1.02] transition-transform' : ''}`}

@@ -6,6 +6,7 @@ import { useAuth } from '../../context/AuthContext';
 import { io } from 'socket.io-client';
 import { supabase } from '../../utils/supabase';
 import { useNotification } from '../../context/NotificationContext';
+import { compressImage } from '../../utils/imageCompressor';
 
 type Chat = {
   id: string;
@@ -363,10 +364,11 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
 
     setUploading(true);
     try {
-      const fileName = `${user.id}/${Date.now()}-${file.name}`;
+      const compressedFile = await compressImage(file);
+      const fileName = `${user.id}/${Date.now()}.jpg`;
       const { error } = await supabase.storage
         .from('message-attachments')
-        .upload(fileName, file);
+        .upload(fileName, compressedFile);
 
       if (error) throw error;
 
@@ -393,10 +395,11 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
 
     setUploading(true);
     try {
+      const compressedFile = await compressImage(file);
       const fileName = `groups/${chat.id}/${Date.now()}.jpg`;
       const { error: uploadError } = await supabase.storage
         .from('avatars')
-        .upload(fileName, file);
+        .upload(fileName, compressedFile);
 
       if (uploadError) {
         alert(`Upload failed: ${uploadError.message}`);

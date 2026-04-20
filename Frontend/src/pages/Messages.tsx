@@ -159,7 +159,7 @@ export default function Messages() {
       const openChatWithUser = async () => {
         initializingChat.current = true;
         try {
-          const URL = (import.meta.env.VITE_BACKEND_URL || 'http://localhost:10000').replace(/\/$/, '');
+          const URL = (import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || 'http://localhost:10000').replace(/\/$/, '');
           const response = await fetch(`${URL}/api/conversations/with/${targetUserId}`, {
             method: 'GET',
             headers: { 'x-user-id': user.id }
@@ -247,7 +247,7 @@ export default function Messages() {
     
     setCreatingGroup(true);
     try {
-      const BACKEND_URL = (import.meta.env.VITE_API_URL || 'http://localhost:10000').replace(/\/$/, '');
+      const BACKEND_URL = (import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || 'http://localhost:10000').replace(/\/$/, '');
       const response = await fetch(`${BACKEND_URL}/api/conversations`, {
         method: 'POST',
         headers: { 
