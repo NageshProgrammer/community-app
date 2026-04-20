@@ -49,8 +49,8 @@ app.get('/api/bootstrap', async (req, res) => {
     // Parallelize all heavy lifting
     const [profileRes, convRes, notifRes, postsRes, followRes] = await Promise.all([
       supabase.from('profiles').select('*').eq('id', userId).maybeSingle(),
-      supabase.from('conversations').select('*').contains('participants', [userId]).limit(10),
-      supabase.from('notifications').select('*').eq('user_id', userId).order('created_at', { ascending: false }).limit(10),
+      supabase.from('conversations').select('*').contains('participants', [userId]).order('updatedat', { ascending: false }).limit(20),
+      supabase.from('notifications').select('*').eq('user_id', userId).order('created_at', { ascending: false }).limit(20),
       supabase.from('posts').select(`
         *,
         author:profiles(*),
@@ -61,20 +61,43 @@ app.get('/api/bootstrap', async (req, res) => {
       supabase.from('follows').select('following_user_id').eq('follower_id', userId)
     ]);
 
-    // 1. Enrich Conversations
-    const conversations = await Promise.all((convRes.data || []).map(async (convo: any) => {
-      const [countRes, otherProfile] = await Promise.all([
-        supabase.from('messages').select('id', { count: 'exact', head: true }).eq('conversationid', convo.id).eq('isread', false).neq('senderid', userId),
-        !convo.is_group ? supabase.from('profiles').select('*').eq('id', convo.participants.find((p: string) => p !== userId)).maybeSingle() : Promise.resolve({ data: null })
-      ]);
+    // OPTIMIZED: Enrich Conversations in BATCHES
+    const convData = convRes.data || [];
+    const conversationIds = convData.map(c => c.id);
+    const otherParticipantIds = convData.flatMap(c => 
+      c.participants.filter((p: string) => p !== userId)
+    );
+
+    // Fetch all needed profiles and unread counts in parallel batch calls
+    const [profilesRes, unreadRes] = await Promise.all([
+      otherParticipantIds.length > 0 
+        ? supabase.from('profiles').select('*').in('id', otherParticipantIds)
+        : Promise.resolve({ data: [] }),
+      conversationIds.length > 0
+        ? supabase.from('messages')
+            .select('conversationid, isread, senderid')
+            .in('conversationid', conversationIds)
+            .eq('isread', false)
+            .neq('senderid', userId)
+        : Promise.resolve({ data: [] })
+    ]);
+
+    const profilesMap = new Map((profilesRes.data || []).map((p: any) => [p.id, p]));
+    const unreadMap = new Map();
+    (unreadRes.data || []).forEach((m: any) => {
+      unreadMap.set(m.conversationid, (unreadMap.get(m.conversationid) || 0) + 1);
+    });
+
+    const conversations = convData.map((convo: any) => {
+      const otherId = convo.participants.find((p: string) => p !== userId);
       return {
         ...convo,
-        unreadCount: countRes.count || 0,
-        profile: otherProfile.data,
+        unreadCount: unreadMap.get(convo.id) || 0,
+        profile: profilesMap.get(otherId),
         updatedAt: convo.updatedat || convo.updated_at,
         lastMessage: convo.lastmessage || convo.last_message
       };
-    }));
+    });
 
     // 2. Enrich Posts (Merge counts into flattened numbers)
     const postIds = (postsRes.data || []).map((p: any) => p.id);
@@ -101,7 +124,8 @@ app.get('/api/bootstrap', async (req, res) => {
       conversations,
       notifications: notifRes.data || [],
       posts,
-      following: (followRes.data || []).map((f: any) => f.following_user_id)
+      following: (followRes.data || []).map((f: any) => f.following_user_id),
+      serverTime: new Date().toISOString()
     };
 
     // 2. Store in Cache
@@ -111,6 +135,65 @@ app.get('/api/bootstrap', async (req, res) => {
   } catch (err) {
     console.error('Bootstrap Critical Failure:', err);
     res.status(500).json({ error: 'Bootstrap failed' });
+  }
+});
+
+// ===== PROFILE API (Consolidated Fetching) =====
+app.get('/api/profile/:targetUserId', async (req, res) => {
+  const currentUserId = getUserId(req);
+  const { targetUserId } = req.params;
+
+  try {
+    // Stage 1: Basic Profile Info and Follow counts
+    const [profileRes, followersRes, followingRes, postsRes, repostsRes, repliesRes, likesRes] = await Promise.all([
+      supabase.from('profiles').select('*').eq('id', targetUserId).maybeSingle(),
+      supabase.from('follows').select('*', { count: 'exact', head: true }).eq('following_user_id', targetUserId),
+      supabase.from('follows').select('*', { count: 'exact', head: true }).eq('follower_id', targetUserId),
+      // Fetch latest posts
+      supabase.from('posts').select('*, author:profiles!author_id (*), likes:post_likes!post_id(count), comments:post_comments!post_id(count), reposts:post_reposts!post_id(count)').eq('author_id', targetUserId).order('created_at', { ascending: false }),
+      // Fetch direct reposts
+      supabase.from('post_reposts').select('post:posts (*, author:profiles!author_id (*), likes:post_likes!post_id(count), comments:post_comments!post_id(count), reposts:post_reposts!post_id(count))').eq('user_id', targetUserId),
+      // Fetch replies
+      supabase.from('post_comments').select('post:posts (*, author:profiles!author_id (*), likes:post_likes!post_id(count), comments:post_comments!post_id(count), reposts:post_reposts!post_id(count))').eq('user_id', targetUserId),
+      // Fetch likes
+      supabase.from('post_likes').select('post:posts (*, author:profiles!author_id (*), likes:post_likes!post_id(count), comments:post_comments!post_id(count), reposts:post_reposts!post_id(count))').eq('user_id', targetUserId)
+    ]);
+
+    // Stage 2: Interaction status for current user (if logged in)
+    let likedIds: string[] = [];
+    let repostedIds: string[] = [];
+    
+    if (currentUserId) {
+      const allFetchedPostIds = [
+        ...(postsRes.data || []).map(p => p.id),
+        ...(repostsRes.data || []).map((p: any) => p.post?.id),
+        ...(repliesRes.data || []).map((p: any) => p.post?.id),
+        ...(likesRes.data || []).map((p: any) => p.post?.id)
+      ].filter(Boolean);
+
+      if (allFetchedPostIds.length > 0) {
+        const [likesStatus, repostsStatus] = await Promise.all([
+          supabase.from('post_likes').select('post_id').in('post_id', allFetchedPostIds).eq('user_id', currentUserId),
+          supabase.from('post_reposts').select('post_id').in('post_id', allFetchedPostIds).eq('user_id', currentUserId)
+        ]);
+        likedIds = (likesStatus.data || []).map(l => l.post_id);
+        repostedIds = (repostsStatus.data || []).map(r => r.post_id);
+      }
+    }
+
+    res.json({
+      profile: profileRes.data,
+      followerCount: followersRes.count || 0,
+      followingCount: followingRes.count || 0,
+      posts: postsRes.data || [],
+      reposts: (repostsRes.data || []).map((r: any) => r.post).filter(Boolean),
+      replies: (repliesRes.data || []).map((r: any) => r.post).filter(Boolean),
+      likes: (likesRes.data || []).map((r: any) => r.post).filter(Boolean),
+      interactionStatus: { likedIds, repostedIds }
+    });
+  } catch (err: any) {
+    console.error('Profile fetch failed:', err.message);
+    res.status(500).json({ error: 'Failed' });
   }
 });
 
@@ -147,44 +230,54 @@ app.get('/api/conversations', async (req, res) => {
     const { data: convos, error } = await supabase
       .from('conversations')
       .select('*')
-      .contains('participants', [userId]);
+      .contains('participants', [userId])
+      .order('updatedat', { ascending: false });
 
     if (error) {
       console.warn('Conversations fetch warning:', error.message);
       return res.json([]);
     }
 
-    const enrichedConvos = await Promise.all((convos || []).map(async (convo) => {
-      try {
-        const [countResult, profileResult] = await Promise.all([
-          supabase
-            .from('messages')
-            .select('id', { count: 'exact', head: true })
-            .eq('conversationid', convo.id)
+    const convData = convos || [];
+    const conversationIds = convData.map(c => c.id);
+    const otherParticipantIds = convData.flatMap(c => 
+      c.participants?.filter((p: string) => p !== userId) || []
+    ).filter(Boolean);
+
+    // Batch fetch profiles and unread statuses
+    const [profilesRes, unreadRes] = await Promise.all([
+      otherParticipantIds.length > 0 
+        ? supabase.from('profiles').select('*').in('id', otherParticipantIds)
+        : Promise.resolve({ data: [] }),
+      conversationIds.length > 0
+        ? supabase.from('messages')
+            .select('conversationid, isread, senderid')
+            .in('conversationid', conversationIds)
             .eq('isread', false)
-            .neq('senderid', userId),
+            .neq('senderid', userId)
+        : Promise.resolve({ data: [] })
+    ]);
 
-          !convo.is_group ? supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', convo.participants?.find((p: string) => p !== userId) || '')
-            .single() : Promise.resolve({ data: null })
-        ]);
+    const profilesMap = new Map((profilesRes.data || []).map((p: any) => [p.id, p]));
+    const unreadMap = new Map();
+    (unreadRes.data || []).forEach((m: any) => {
+      unreadMap.set(m.conversationid, (unreadMap.get(m.conversationid) || 0) + 1);
+    });
 
-        return {
-          ...convo,
-          unreadCount: countResult.count || 0,
-          profile: profileResult.data,
-          updatedAt: convo.updatedat || convo.updated_at,
-          lastMessage: convo.lastmessage || convo.last_message
-        };
-      } catch (e) {
-        return { ...convo, unreadCount: 0, profile: null };
-      }
-    }));
+    const enrichedConvos = convData.map((convo: any) => {
+      const otherId = convo.participants?.find((p: string) => p !== userId);
+      return {
+        ...convo,
+        unreadCount: unreadMap.get(convo.id) || 0,
+        profile: profilesMap.get(otherId),
+        updatedAt: convo.updatedat || convo.updated_at,
+        lastMessage: convo.lastmessage || convo.last_message
+      };
+    });
 
     res.json(enrichedConvos);
   } catch (err) {
+    console.error('Safe fallback for conversations fetch:', err);
     res.json([]);
   }
 });

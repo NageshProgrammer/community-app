@@ -85,18 +85,19 @@ export function Profile() {
       if (!targetUserId) return;
       setLoading(true);
 
+      const isProd = import.meta.env.PROD;
+      const fallbackUrl = isProd ? window.location.origin : 'http://localhost:10000';
+      const BACKEND_URL = (import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || fallbackUrl).replace(/\/$/, '');
+
       try {
-        const { data: profileData, error: profileError } = await supabase
-          .from("profiles")
-          .select("*")
-          .eq("id", targetUserId)
-          .maybeSingle();
+        const response = await fetch(`${BACKEND_URL}/api/profile/${targetUserId}`, {
+          headers: { 'x-user-id': currentUser?.id || '' }
+        });
 
-        if (profileError) {
-          console.warn("Profile select warning", profileError);
-        }
-
-        let activeProfile = profileData as any | null;
+        if (!response.ok) throw new Error("Profile fetch failed");
+        
+        const data = await response.json();
+        let activeProfile = data.profile;
 
         if (!activeProfile && isOwnProfile && currentUser) {
           const defaultUsername = currentUser.email?.split("@")[0] || "user";
@@ -117,189 +118,82 @@ export function Profile() {
           activeProfile = upsertData as any;
         }
 
-        if (!activeProfile) {
-          activeProfile = {
-            id: targetUserId,
-            username: `user_${targetUserId.substring(0, 5)}`,
-            full_name: `User ${targetUserId.substring(0, 5)}`,
-            avatar_url: `https://api.dicebear.com/7.x/avataaars/svg?seed=${targetUserId}`,
-            bio: "No bio yet.",
-            website: "",
-            created_at: new Date().toISOString(),
-            followers: [{ count: 0 }],
-            following: [{ count: 0 }],
-          };
+        if (activeProfile) {
+          setProfile(activeProfile as UserProfile);
+          setFullName(activeProfile.full_name || "");
+          setUsername(activeProfile.username || "");
+          setBio(activeProfile.bio || "");
+          setWebsite(activeProfile.website || "");
+          setAvatarUrl(activeProfile.avatar_url || "");
+          setCoverUrl(activeProfile.cover_url || "");
         }
 
-        setProfile(activeProfile as UserProfile);
-        setFullName(activeProfile.full_name || "");
-        setUsername(activeProfile.username || "");
-        setBio(activeProfile.bio || "");
-        setWebsite(activeProfile.website || "");
-        setAvatarUrl(activeProfile.avatar_url || "");
-        setCoverUrl(activeProfile.cover_url || "");
+        setFollowerCount(data.followerCount || 0);
+        setFollowingCount(data.followingCount || 0);
 
-        const { count: fetchedFollowers } = await supabase
-          .from("follows")
-          .select("*", { count: "exact", head: true })
-          .eq("following_user_id", targetUserId);
-
-        const { count: fetchedFollowing } = await supabase
-          .from("follows")
-          .select("*", { count: "exact", head: true })
-          .eq("follower_id", targetUserId);
-
-        setFollowerCount(fetchedFollowers || 0);
-        setFollowingCount(fetchedFollowing || 0);
-
-        const { data: postsData, error: _postsError } = await supabase
-          .from("posts")
-          .select(
-            `
-            *,
-            author:profiles!author_id (*),
-            likes:post_likes!post_id(count),
-            comments:post_comments!post_id(count),
-            reposts:post_reposts!post_id(count)
-          `,
-          )
-          .eq("author_id", targetUserId)
-          .order("created_at", { ascending: false });
-
-        // Also fetch direct reposts (items in post_reposts table)
-        const { data: directRepostsData } = await supabase
-          .from("post_reposts")
-          .select(`
-            post:posts (
-              *,
-              author:profiles!author_id (*),
-              likes:post_likes!post_id(count),
-              comments:post_comments!post_id(count),
-              reposts:post_reposts!post_id(count)
-            )
-          `)
-          .eq("user_id", targetUserId);
-
-        // Fetch replies (posts the user commented on)
-        const { data: repliesData } = await supabase
-          .from("post_comments")
-          .select(`
-            post:posts (
-              *,
-              author:profiles!author_id (*),
-              likes:post_likes!post_id(count),
-              comments:post_comments!post_id(count),
-              reposts:post_reposts!post_id(count)
-            )
-          `)
-          .eq("user_id", targetUserId);
-
-        // Fetch likes (posts the user liked)
-        const { data: likesData } = await supabase
-          .from("post_likes")
-          .select(`
-            post:posts (
-              *,
-              author:profiles!author_id (*),
-              likes:post_likes!post_id(count),
-              comments:post_comments!post_id(count),
-              reposts:post_reposts!post_id(count)
-            )
-          `)
-          .eq("user_id", targetUserId);
-
-        const allVisiblePosts: any[] = [...(postsData || [])];
+        const { likedIds, repostedIds } = data.interactionStatus;
         
-        // Helper to add unique posts from joins
-        const addUniquePosts = (data: any[]) => {
-          if (!data) return;
-          data.forEach((item: any) => {
-            if (item.post && !allVisiblePosts.find(p => p.id === item.post.id)) {
-              // Add a virtual property to help with filtering if needed
-              allVisiblePosts.push(item.post);
-            }
-          });
-        };
+        // Helper to combine posts from different categories
+        const combinedRaw = [
+          ...(data.posts || []),
+          ...(data.reposts || []),
+          ...(data.replies || []),
+          ...(data.likes || [])
+        ];
 
-        addUniquePosts(directRepostsData || []);
-        addUniquePosts(repliesData || []);
-        addUniquePosts(likesData || []);
+        // Deduplicate
+        const uniqueMap = new Map();
+        combinedRaw.forEach(p => { if(p) uniqueMap.set(p.id, p); });
+        const allVisiblePosts = Array.from(uniqueMap.values());
         
         allVisiblePosts.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
-        if (allVisiblePosts.length >= 0) {
-          const likedPostsRes = currentUser
-            ? await supabase.from('post_likes').select('post_id').eq('user_id', currentUser.id)
-            : { data: [] };
-          const repostedPostsRes = currentUser
-            ? await supabase.from('post_reposts').select('post_id').eq('user_id', currentUser.id)
-            : { data: [] };
+        // Extract specific IDs for tab filtering from the raw response categories
+        const targetLikedIds = new Set((data.likes || []).map((p: any) => p?.id));
+        const targetRepliedIds = new Set((data.replies || []).map((p: any) => p?.id));
+        const targetRepostedIds = new Set((data.reposts || []).map((p: any) => p?.id));
 
-          const likedIds = likedPostsRes.data?.map((item: any) => item.post_id) ?? [];
-          const repostedIds = repostedPostsRes.data?.map((item: any) => item.post_id) ?? [];
+        const mappedPosts: PostData[] = allVisiblePosts.map((post: any) => ({
+          id: post.id,
+          author: {
+            id: post.author_id,
+            name: post.author?.full_name || 'User',
+            handle: post.author?.username || 'user',
+            avatar: post.author?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${post.author_id}`,
+          },
+          content: post.content,
+          created_at: post.created_at,
+          timestamp: new Date(post.created_at).toLocaleString(),
+          likes: post.likes?.[0]?.count || 0,
+          comments: post.comments?.[0]?.count || 0,
+          reposts: post.reposts?.[0]?.count || 0,
+          isLiked: likedIds.includes(post.id),
+          isReposted: repostedIds.includes(post.id),
+          _isTargetLiked: targetLikedIds.has(post.id),
+          _isTargetReplied: targetRepliedIds.has(post.id),
+          _isTargetReposted: targetRepostedIds.has(post.id),
+          image: post.image,
+          location: post.location,
+          reposted_post_id: post.reposted_post_id,
+          original_post: post.original_post ? {
+            id: post.original_post.id,
+            author: {
+              id: post.original_post.author_id,
+              name: post.original_post.author?.full_name || 'User',
+              handle: post.original_post.author?.username || 'user',
+              avatar: post.original_post.author?.avatar_url || ''
+            },
+            content: post.original_post.content,
+            timestamp: new Date(post.original_post.created_at).toLocaleString(),
+            created_at: post.original_post.created_at,
+            likes: post.original_post.likes?.[0]?.count || 0,
+            comments: post.original_post.comments?.[0]?.count || 0,
+            reposts: post.original_post.reposts?.[0]?.count || 0,
+            image: post.original_post.image
+          } : null
+        }));
 
-          // Also track which posts were specifically liked/replied to by the TARGET user for tab filtering
-          const targetLikedIds = (likesData || [])
-            .map((item: any) => item.post?.id)
-            .filter(Boolean);
-            
-          const targetRepliedIds = (repliesData || [])
-            .map((item: any) => item.post?.id)
-            .filter(Boolean);
-            
-          const targetRepostedIds = (directRepostsData || [])
-            .map((item: any) => item.post?.id)
-            .filter(Boolean);
-
-          console.log(`DEBUG: Found ${targetLikedIds.length} likes for user ${targetUserId}`);
-
-          const mappedPosts: PostData[] = allVisiblePosts.map(
-            (post: any) => {
-               const authorProfile = post.author;
-               return {
-                  id: post.id,
-                  author: {
-                    id: post.author_id,
-                    name: authorProfile?.full_name || 'User',
-                    handle: authorProfile?.username || 'user',
-                    avatar: authorProfile?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${post.author_id}`,
-                  },
-                  content: post.content,
-                  created_at: post.created_at,
-                  timestamp: new Date(post.created_at).toLocaleString(),
-                  likes: post.likes?.[0]?.count || 0,
-                  comments: post.comments?.[0]?.count || 0,
-                  reposts: post.reposts?.[0]?.count || 0,
-                  isLiked: likedIds.includes(post.id),
-                  isReposted: repostedIds.includes(post.id),
-                  // Virtual flags for tab filtering
-                  _isTargetLiked: targetLikedIds.includes(post.id),
-                  _isTargetReplied: targetRepliedIds.includes(post.id),
-                  _isTargetReposted: targetRepostedIds.includes(post.id),
-                  image: post.image,
-                  location: post.location,
-                  reposted_post_id: post.reposted_post_id,
-                  original_post: post.original_post ? {
-                    id: post.original_post.id,
-                    author: {
-                      id: post.original_post.author_id,
-                      name: post.original_post.author?.full_name || 'User',
-                      handle: post.original_post.author?.username || 'user',
-                      avatar: post.original_post.author?.avatar_url || ''
-                    },
-                    content: post.original_post.content,
-                    timestamp: new Date(post.original_post.created_at).toLocaleString(),
-                    created_at: post.original_post.created_at,
-                    likes: post.original_post.likes?.[0]?.count || 0,
-                    comments: post.original_post.comments?.[0]?.count || 0,
-                    reposts: post.original_post.reposts?.[0]?.count || 0,
-                    image: post.original_post.image
-                  } : null
-               };
-            }
-          );
-          setPosts(mappedPosts);
-        }
+        setPosts(mappedPosts);
       } catch (err) {
         console.error("Error loading profile:", err);
       } finally {

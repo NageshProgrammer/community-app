@@ -88,7 +88,7 @@ export default function Messages() {
 
     const fetchConversations = async () => {
       setLoading(true);
-      const timeoutId = setTimeout(() => controller.abort(), 6000); // 6s timeout rescue
+      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout to handle Render cold starts
 
       try {
         const isProd = import.meta.env.PROD;
