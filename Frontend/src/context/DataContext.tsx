@@ -23,7 +23,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setLoadingData(true);
     setError(null);
     try {
-      const backendBaseUrl = (import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || 'http://localhost:10000').replace(/\/$/, '');
+      const isProd = import.meta.env.PROD;
+      const fallbackUrl = isProd ? window.location.origin : 'http://localhost:10000';
+      const backendBaseUrl = (import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || fallbackUrl).replace(/\/$/, '');
       const url = new URL(`${backendBaseUrl}/api/bootstrap`);
       
       const currentLastFetched = localStorage.getItem('last_bootstrap_time');

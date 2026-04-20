@@ -91,7 +91,9 @@ export default function Messages() {
       const timeoutId = setTimeout(() => controller.abort(), 6000); // 6s timeout rescue
 
       try {
-        const BACKEND_URL = (import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || 'http://localhost:10000').replace(/\/$/, '');
+        const isProd = import.meta.env.PROD;
+        const fallbackUrl = isProd ? window.location.origin : 'http://localhost:10000';
+        const BACKEND_URL = (import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || fallbackUrl).replace(/\/$/, '');
         const response = await fetch(`${BACKEND_URL}/api/conversations`, {
           headers: { 'x-user-id': user.id },
           signal: controller.signal
