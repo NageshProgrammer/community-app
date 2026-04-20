@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { useAuth } from './AuthContext';
 import { useData } from './DataContext';
@@ -73,11 +73,14 @@ export function PostProvider({ children }: { children: ReactNode }) {
 
   const { initialData } = useData();
 
+  const hasInitialized = useRef(false);
+
   const fetchPosts = useCallback(async () => {
-    // If we have initial data from bootstrap, use it immediately
-    if (initialData?.posts && posts.length === 0) {
+    // If we have initial data from bootstrap, use it immediately (only once)
+    if (initialData?.posts && !hasInitialized.current) {
       setPosts(initialData.posts);
       setLoading(false);
+      hasInitialized.current = true;
       return;
     }
 
@@ -192,7 +195,7 @@ export function PostProvider({ children }: { children: ReactNode }) {
     } finally {
       setLoading(false);
     }
-  }, [user, initialData, posts.length]);
+  }, [user, initialData]);
 
   useEffect(() => {
     fetchPosts();
