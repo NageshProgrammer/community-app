@@ -100,7 +100,7 @@ export function SocialProvider({ children }: { children: ReactNode }) {
         await supabase.from('notifications').insert({
           user_id: targetId,
           type: 'follow',
-          sender_id: user.id,
+          senderid: user.id,
           message: `${profile?.full_name || profile?.username || 'Someone'} started following you!`
         });
       }

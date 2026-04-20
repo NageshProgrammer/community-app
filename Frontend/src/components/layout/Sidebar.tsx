@@ -45,7 +45,9 @@ export function Sidebar({ onOpenPostModal }: SidebarProps) {
       lastFetchTime.current = now;
 
       try {
-        const BACKEND_URL = (import.meta.env.VITE_API_URL || 'http://localhost:10000').replace(/\/$/, '');
+        const isProd = import.meta.env.PROD;
+        const fallbackUrl = isProd ? window.location.origin : 'http://localhost:10000';
+        const BACKEND_URL = (import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || fallbackUrl).replace(/\/$/, '');
         
         // Use parallel fetching to reduce connection time
         const [convRes, notifRes] = await Promise.all([

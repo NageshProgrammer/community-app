@@ -311,7 +311,7 @@ export function PostProvider({ children }: { children: ReactNode }) {
           await supabase.from("notifications").insert({
             user_id: post.author.id,
             type: "like",
-            sender_id: user.id,
+            senderid: user.id,
             message: `${profile?.full_name || profile?.username || "Someone"} liked your post!`,
           });
         }
@@ -366,7 +366,7 @@ export function PostProvider({ children }: { children: ReactNode }) {
         await supabase.from("notifications").insert({
           user_id: post.author.id,
           type: "comment",
-          sender_id: user.id,
+          senderid: user.id,
           message: `${profile?.full_name || profile?.username || "Someone"} commented on your post!`,
         });
       }
