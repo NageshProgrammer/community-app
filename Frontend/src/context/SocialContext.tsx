@@ -4,11 +4,11 @@ import { supabase } from '../utils/supabase';
 import { useAuth } from './AuthContext';
 import { useNotification } from './NotificationContext';
 import { useData } from './DataContext';
+import { apiFetch } from '../utils/api';
 
 interface SocialContextType {
   followingIds: string[];
   followerCounts: Record<string, number>;
-  // FIXED: Made currentFollowers optional so it doesn't break other components
   toggleFollow: (id: string, currentFollowers?: number) => Promise<void>;
   searchQuery: string;
   setSearchQuery: (query: string) => void;
@@ -53,17 +53,13 @@ export function SocialProvider({ children }: { children: ReactNode }) {
     fetchFollowing();
   }, [user, initialData]);
 
-  // FIXED: Defaulted currentCountOnUI to 0 if not provided
   const toggleFollow = async (targetId: string, currentCountOnUI: number = 0) => {
     if (!user || !targetId || user.id === targetId) return;
 
     const isFollowing = followingIds.includes(targetId);
-
-    // Save original state for rollback
     const originalFollowing = [...followingIds];
     const originalCounts = { ...followerCounts };
 
-    // 1. OPTIMISTIC UPDATE (Instant UI change)
     setFollowingIds(prev => isFollowing
       ? prev.filter(id => id !== targetId)
       : [...prev, targetId]
@@ -75,38 +71,24 @@ export function SocialProvider({ children }: { children: ReactNode }) {
 
     try {
       if (isFollowing) {
-        // Unfollow request to Supabase
-        const { error } = await supabase
-          .from('follows')
-          .delete()
-          .match({ follower_id: user.id, following_user_id: targetId });
-
-        if (error) throw error;
+        await apiFetch('/api/queue-activity', {
+          method: 'POST',
+          body: JSON.stringify({ 
+            type: 'FOLLOW', 
+            payload: { targetId, action: 'unfollow' } 
+          })
+        }, user.id);
       } else {
-        // Follow request to Supabase
-        const { error } = await supabase
-          .from('follows')
-          .insert({ follower_id: user.id, following_user_id: targetId });
-
-        if (error) throw error;
-
-        // Optional: Create Notification in Supabase
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('full_name, username')
-          .eq('id', user.id)
-          .maybeSingle();
-
-        await supabase.from('notifications').insert({
-          user_id: targetId,
-          type: 'follow',
-          senderid: user.id,
-          message: `${profile?.full_name || profile?.username || 'Someone'} started following you!`
-        });
+        await apiFetch('/api/queue-activity', {
+          method: 'POST',
+          body: JSON.stringify({ 
+            type: 'FOLLOW', 
+            payload: { targetId, action: 'follow' } 
+          })
+        }, user.id);
       }
     } catch (err) {
       console.error('Error toggling follow in Supabase:', err);
-      // 2. ROLLBACK ON FAILURE
       setFollowingIds(originalFollowing);
       setFollowerCounts(originalCounts);
       showNotification('Error updating follow status. Please try again.', 'error');

@@ -98,7 +98,19 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
       }
     };
 
+    const markAsRead = async () => {
+      try {
+        await fetch(`${BACKEND_URL}/api/conversations/${chat.id}/read`, {
+          method: 'POST',
+          headers: { 'x-user-id': user?.id || '' }
+        });
+      } catch (err) {
+        console.error('Error marking as read:', err);
+      }
+    };
+
     fetchMessages();
+    markAsRead();
     socket.emit('join_room', chat.id);
 
     const handleNewMessage = (msg: any) => {
@@ -108,7 +120,23 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
     };
 
     socket.on('new_message', handleNewMessage);
-    return () => { socket.off('new_message', handleNewMessage); };
+    
+    const handleEdited = ({ messageId, text }: any) => {
+      setMessages(prev => prev.map(m => m.id === messageId ? { ...m, text, is_edited: true } : m));
+    };
+    
+    const handleDeleted = ({ messageId }: any) => {
+      setMessages(prev => prev.filter(m => m.id !== messageId));
+    };
+
+    socket.on('message_edited', handleEdited);
+    socket.on('message_deleted', handleDeleted);
+
+    return () => { 
+      socket.off('new_message', handleNewMessage); 
+      socket.off('message_edited', handleEdited);
+      socket.off('message_deleted', handleDeleted);
+    };
   }, [chat.id, user?.id]);
 
   // Fetch Participants for Group Info
@@ -162,10 +190,21 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
   };
 
   const handleClearChat = async () => {
-    const confirm = window.confirm("Clear all messages in this conversation?");
+    const confirm = window.confirm("Clear all messages in this conversation permanently?");
     if (confirm) {
-      setMessages([]);
-      showNotification('Conversation cleared', 'success');
+      try {
+        const response = await fetch(`${BACKEND_URL}/api/conversations/${chat.id}/messages`, {
+          method: 'DELETE',
+          headers: { 'x-user-id': user?.id || '' }
+        });
+        if (response.ok) {
+          setMessages([]);
+          showNotification('Conversation cleared permanently', 'success');
+        }
+      } catch (err) {
+        console.error('Error clearing chat:', err);
+        showNotification('Failed to clear chat', 'error');
+      }
       setShowMenu(false);
     }
   };
@@ -272,28 +311,36 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
     setShowEmojis(false);
 
     try {
-      const response = await fetch(`${BACKEND_URL}/api/messages`, {
+      const response = await fetch(`${BACKEND_URL}/api/queue-activity`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'x-user-id': user.id
         },
         body: JSON.stringify({
-          conversationId: chat.id,
-          text: content,
-          imageUrl: imageUrl,
-          reply_to_id: replyId
+          type: 'MESSAGE',
+          payload: {
+            conversationId: chat.id,
+            text: content,
+            imageUrl: imageUrl,
+            voiceUrl: voiceUrl,
+            replyToId: replyId
+          }
         })
       });
 
       if (response.ok) {
-        const sentMsg = await response.json();
-        // Manually attach the reply object for instant rendering
-        const messageWithReply = { 
-          ...sentMsg, 
-          reply_to: replyingTo ? (Array.isArray(replyingTo) ? replyingTo : [replyingTo]) : null 
+        // Optimistic UI update
+        const sentMsg = {
+          id: Math.random().toString(36).substring(7),
+          senderId: user.id,
+          text: content,
+          image_url: imageUrl,
+          voice_url: voiceUrl,
+          timestamp: new Date().toISOString(),
+          reply_to: replyingTo ? (Array.isArray(replyingTo) ? replyingTo : [replyingTo]) : null
         };
-        setMessages(prev => [...prev, messageWithReply]);
+        setMessages(prev => [...prev, sentMsg]);
         setReplyingTo(null);
       }
     } catch (err) {
@@ -309,13 +356,16 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
     }
 
     try {
-      const response = await fetch(`${BACKEND_URL}/api/messages/${messageId}`, {
-        method: 'PATCH',
+      const response = await fetch(`${BACKEND_URL}/api/queue-activity`, {
+        method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'x-user-id': user?.id || ''
         },
-        body: JSON.stringify({ text: editContent.trim() })
+        body: JSON.stringify({ 
+          type: 'MESSAGE_UPDATE', 
+          payload: { action: 'edit', messageId, text: editContent.trim(), conversationId: chat.id } 
+        })
       });
 
       if (response.ok) {
@@ -338,18 +388,22 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
     setMessages(prev => prev.filter(m => m.id !== messageId));
 
     try {
-      // 2. Direct Delete via Supabase (Avoiding the non-existent /api/messages/:id route)
-      // Attempt deletion with both common column names for the sender
-      const { error: dbError } = await supabase
-        .from('messages')
-        .delete()
-        .eq('id', messageId);
+      const response = await fetch(`${BACKEND_URL}/api/queue-activity`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': user?.id || ''
+        },
+        body: JSON.stringify({ 
+          type: 'MESSAGE_UPDATE', 
+          payload: { action: 'delete', messageId, conversationId: chat.id } 
+        })
+      });
 
-      if (dbError) throw dbError;
+      if (!response.ok) throw new Error('Failed to delete');
       
     } catch (err) {
-      console.error('Database deletion failed:', err);
-      // Revert if the database rejected it (e.g., RLS permission issues)
+      console.error('Deletion failed:', err);
       alert("Permission denied or message already deleted.");
       if (messageToDelete) {
         setMessages(prev => [...prev, messageToDelete].sort((a,b) => 
@@ -491,6 +545,42 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
     }
   };
 
+  const [isBlocked, setIsBlocked] = useState(false);
+  const [checkingBlock, setCheckingBlock] = useState(false);
+
+  useEffect(() => {
+    if (chat.targetUserId && user) {
+      const checkBlockStatus = async () => {
+        const { data } = await supabase.from('blocks').select('*').eq('blocker_id', user.id).eq('blocked_id', chat.targetUserId).maybeSingle();
+        setIsBlocked(!!data);
+      };
+      checkBlockStatus();
+    }
+  }, [chat.targetUserId, user]);
+
+  const handleToggleBlock = async () => {
+    if (!chat.targetUserId || !user || checkingBlock) return;
+    setCheckingBlock(true);
+    const action = isBlocked ? 'unblock' : 'block';
+    
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/queue-activity`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-user-id': user.id },
+        body: JSON.stringify({ type: 'BLOCK', payload: { targetId: chat.targetUserId, action } })
+      });
+      if (response.ok) {
+        setIsBlocked(!isBlocked);
+        showNotification(isBlocked ? 'User unblocked' : 'User blocked', isBlocked ? 'info' : 'warning');
+      }
+    } catch (err) {
+      console.error('Block failed:', err);
+    } finally {
+      setCheckingBlock(false);
+      setShowMenu(false);
+    }
+  };
+
 
 
   return (
@@ -578,13 +668,11 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
                     <Trash2 className="w-4 h-4" /> Clear Chat
                   </button>
                   <button 
-                    onClick={() => {
-                        showNotification('User blocked', 'warning');
-                        setShowMenu(false);
-                    }}
-                    className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/5 text-sm text-red-500 font-bold transition-colors cursor-pointer"
+                    onClick={handleToggleBlock}
+                    disabled={checkingBlock}
+                    className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/5 text-sm text-red-500 font-bold transition-colors cursor-pointer disabled:opacity-50"
                   >
-                    < ShieldCheck className="w-4 h-4" /> Block User
+                    < ShieldCheck className="w-4 h-4" /> {isBlocked ? 'Unblock User' : 'Block User'}
                   </button>
                 </motion.div>
               </>
@@ -599,7 +687,8 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
         className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin scrollbar-thumb-gray-800 z-0"
       >
         {messages.map((msg) => {
-          const isMe = msg.senderId === user?.id;
+          const msgSenderId = msg.senderid || msg.senderId;
+          const isMe = msgSenderId === user?.id;
           const quote = Array.isArray(msg.reply_to) ? msg.reply_to[0] : msg.reply_to;
 
           return (
@@ -613,18 +702,25 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
                 ? 'bg-brand/95 text-brand-contrast rounded-tr-sm'
                 : 'bg-gray-800 text-white rounded-tl-sm border border-gray-800/50'
                 }`}>
+                {/* SENDER NAME IN GROUPS */}
+                {chat.isGroup && !isMe && (
+                  <p className="text-[11px] font-black text-brand mb-1 uppercase tracking-wider">
+                    {msg.author?.full_name || msg.author?.username || msg.sender_name || 'User'}
+                  </p>
+                )}
+
                 {/* QUOTED REPLY RENDER */}
                 {quote && (
                   <div className={`mb-2 p-2 rounded-lg border-l-4 text-[11px] min-w-[120px] ${isMe ? 'bg-black/30 border-brand' : 'bg-black/20 border-gray-500'
                     }`}>
                     {/* Name: Show always in Groups, or if it isn't "me" in Private */}
-                    {(chat.isGroup || quote.senderid !== user?.id) && (
+                    {(chat.isGroup || (quote.senderid || quote.senderId) !== user?.id) && (
                       <p className={`font-bold mb-0.5 ${isMe ? 'text-brand' : 'text-gray-400'}`}>
-                        {quote.senderid === user?.id ? 'You' : (quote.author?.full_name || chat.sender)}
+                        {(quote.senderid || quote.senderId) === user?.id ? 'You' : (quote.author?.full_name || quote.author?.username || chat.sender)}
                       </p>
                     )}
-                    {/* Special case: If Private and its "You", show "You" anyway for clarity like Image 1 */}
-                    {!chat.isGroup && quote.senderid === user?.id && (
+                    {/* Special case: If Private and its "You", show "You" anyway */}
+                    {!chat.isGroup && (quote.senderid || quote.senderId) === user?.id && (
                       <p className={`font-bold mb-0.5 text-brand`}>You</p>
                     )}
 
@@ -714,7 +810,7 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
             <div className="flex-1 border-l-4 border-brand pl-3 py-1.5 bg-white/5 rounded-r-2xl">
               <div className="flex items-center justify-between">
                 <p className="text-[12px] text-brand font-bold mb-1">
-                  Replying to {replyingTo.senderId === user?.id ? 'You' : (replyingTo.author?.full_name || chat.sender)}
+                  Replying to {(replyingTo.senderid || replyingTo.senderId) === user?.id ? 'You' : (replyingTo.author?.full_name || chat.sender)}
                 </p>
               </div>
               <div className="flex items-center gap-2 text-[12px] text-gray-400">

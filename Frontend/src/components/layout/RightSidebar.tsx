@@ -1,32 +1,47 @@
 import { Search, Globe, Zap, Users, ArrowUpRight } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useSocial } from '../../context/SocialContext';
 
-const WHO_TO_FOLLOW = [
-  {
-    id: '1',
-    name: 'React',
-    handle: 'reactjs',
-    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=React',
-  },
-  {
-    id: '2',
-    name: 'Vite',
-    handle: 'vite_js',
-    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Vite',
-  },
-  {
-    id: '3',
-    name: 'Tailwind CSS',
-    handle: 'tailwindcss',
-    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Tailwind',
-  },
-];
+interface Hub {
+  name: string;
+  posts: string;
+  color: string;
+  bg: string;
+}
+
+interface RecommendedUser {
+  id: string;
+  name: string;
+  handle: string;
+  avatar: string;
+}
 
 export function RightSidebar() {
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const { followingIds, searchQuery, setSearchQuery } = useSocial();
+  const [trendingHubs, setTrendingHubs] = useState<Hub[]>([]);
+  const [recommendedUsers, setRecommendedUsers] = useState<RecommendedUser[]>([]);
+
+  useEffect(() => {
+    const fetchTrending = async () => {
+      try {
+        const isProd = import.meta.env.PROD;
+        const fallbackUrl = isProd ? window.location.origin : 'http://localhost:10000';
+        const BACKEND_URL = (import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || fallbackUrl).replace(/\/$/, '');
+        
+        const response = await fetch(`${BACKEND_URL}/api/trending`);
+        if (response.ok) {
+          const data = await response.json();
+          if (data.hubs?.length > 0) setTrendingHubs(data.hubs);
+          if (data.users?.length > 0) setRecommendedUsers(data.users);
+        }
+      } catch (err) {
+        console.error('Failed to fetch trending:', err);
+      }
+    };
+    fetchTrending();
+  }, []);
 
   return (
     <aside className="hidden lg:block w-80 p-4 h-screen sticky top-0 overflow-y-auto hide-scrollbar">
@@ -79,11 +94,11 @@ export function RightSidebar() {
             </h2>
           </div>
           <div className="flex flex-col">
-            {[
+            {(trendingHubs.length > 0 ? trendingHubs : [
               { name: 'Global Tech', posts: '12.4K', color: 'text-blue-400', bg: 'bg-blue-400/10' },
               { name: 'Startup Lounge', posts: '8.2K', color: 'text-purple-400', bg: 'bg-purple-400/10' },
               { name: 'Future Design', posts: '5.1K', color: 'text-green-400', bg: 'bg-green-400/10' },
-            ].map((hub) => (
+            ]).map((hub) => (
               <div 
                 key={hub.name}
                 onClick={() => setSearchQuery(hub.name)}
@@ -116,7 +131,10 @@ export function RightSidebar() {
             <Users size={16} className="text-blue-500" /> People to Know
           </h2>
           <div className="flex flex-col gap-5">
-            {WHO_TO_FOLLOW.map((user) => {
+            {(recommendedUsers.length > 0 ? recommendedUsers : [
+              { id: '1', name: 'React', handle: 'reactjs', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=React' },
+              { id: '2', name: 'Vite', handle: 'vite_js', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Vite' },
+            ]).map((user) => {
               const isFollowing = followingIds.some(fid => fid.toLowerCase() === user.id.toLowerCase());
               
               return (

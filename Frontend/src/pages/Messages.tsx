@@ -67,9 +67,9 @@ export default function Messages() {
         
         return {
           id: convo.id,
-          sender: isGroup ? (convo.name || "Group") : (profile?.full_name || profile?.username || 'User'),
+          sender: isGroup ? (convo.name || "Group") : (profile?.display_name || profile?.full_name || profile?.username || 'User'),
           avatarColor: 'bg-brand',
-          initials: (isGroup ? (convo.name || "G") : (profile?.full_name || 'U')).substring(0, 1).toUpperCase(),
+          initials: isGroup ? (convo.name || "G").substring(0, 1).toUpperCase() : (profile?.initial || 'U'),
           avatar_url: isGroup ? convo.avatar_url : profile?.avatar_url,
           lastMessage: convo.lastmessage || convo.lastMessage || 'No messages yet',
           timestamp: new Date(convo.updatedAt || convo.updatedat).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
@@ -111,14 +111,14 @@ export default function Messages() {
           
           return {
             id: convo.id,
-            sender: isGroup ? (convo.name || "Group") : (profile?.full_name || profile?.username || 'User'),
+            sender: isGroup ? (convo.name || "Group") : (profile?.display_name || profile?.full_name || profile?.username || 'User'),
             avatarColor: 'bg-brand',
-            initials: (isGroup ? (convo.name || "G") : (profile?.full_name || 'U')).substring(0, 1).toUpperCase(),
+            initials: isGroup ? (convo.name || "G").substring(0, 1).toUpperCase() : (profile?.initial || 'U'),
             avatar_url: isGroup 
               ? (convo.photo_url || convo.avatar_url || convo.avatarUrl) 
               : (profile?.avatar_url || profile?.avatarUrl || profile?.photo_url),
-            lastMessage: convo.lastMessage || 'No messages yet',
-            timestamp: new Date(convo.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            lastMessage: convo.lastmessage || convo.lastMessage || 'No messages yet',
+            timestamp: new Date(convo.updatedat || convo.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
             unreadCount: convo.unreadCount || 0,
             isOnline: true,
             targetUserId: targetId,

@@ -1,5 +1,5 @@
 // src/pages/Profile.tsx
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Calendar,
@@ -19,7 +19,7 @@ import { usePosts } from "../context/PostContext";
 import { useNotification } from "../context/NotificationContext";
 import { compressImage } from "../utils/imageCompressor";
 
-const TABS = ["Posts", "Reposts", "Replies", "Likes"];
+const TABS = ["Posts", "Quotes", "Reposts", "Replies", "Likes"];
 
 interface UserProfile {
   id: string;
@@ -80,129 +80,127 @@ export function Profile() {
     ? followingIds.includes(targetUserId)
     : false;
 
-  useEffect(() => {
-    const loadProfile = async () => {
-      if (!targetUserId) return;
-      setLoading(true);
+  const loadProfile = useCallback(async () => {
+    if (!targetUserId) return;
+    setLoading(true);
 
-      const isProd = import.meta.env.PROD;
-      const fallbackUrl = isProd ? window.location.origin : 'http://localhost:10000';
-      const BACKEND_URL = (import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || fallbackUrl).replace(/\/$/, '');
+    const isProd = import.meta.env.PROD;
+    const fallbackUrl = isProd ? window.location.origin : 'http://localhost:10000';
+    const BACKEND_URL = (import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || fallbackUrl).replace(/\/$/, '');
 
-      try {
-        const response = await fetch(`${BACKEND_URL}/api/profile/${targetUserId}`, {
-          headers: { 'x-user-id': currentUser?.id || '' }
-        });
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/profile/${targetUserId}`, {
+        headers: { 'x-user-id': currentUser?.id || '' }
+      });
 
-        if (!response.ok) throw new Error("Profile fetch failed");
-        
-        const data = await response.json();
-        let activeProfile = data.profile;
+      if (!response.ok) throw new Error("Profile fetch failed");
+      
+      const data = await response.json();
+      let activeProfile = data.profile;
 
-        if (!activeProfile && isOwnProfile && currentUser) {
-          const defaultUsername = currentUser.email?.split("@")[0] || "user";
-          const { data: upsertData, error: upsertError } = await supabase
-            .from("profiles")
-            .upsert({
-              id: currentUser.id,
-              username: defaultUsername,
-              full_name: defaultUsername,
-              avatar_url: `https://api.dicebear.com/7.x/avataaars/svg?seed=${currentUser.id}`,
-              bio: "",
-              website: "",
-            })
-            .select()
-            .single();
+      if (!activeProfile && isOwnProfile && currentUser) {
+        const defaultUsername = currentUser.email?.split("@")[0] || "user";
+        const { data: upsertData, error: upsertError } = await supabase
+          .from("profiles")
+          .upsert({
+            id: currentUser.id,
+            username: defaultUsername,
+            full_name: defaultUsername,
+            avatar_url: `https://api.dicebear.com/7.x/avataaars/svg?seed=${currentUser.id}`,
+            bio: "",
+            website: "",
+          })
+          .select()
+          .single();
 
-          if (upsertError) throw upsertError;
-          activeProfile = upsertData as any;
-        }
-
-        if (activeProfile) {
-          setProfile(activeProfile as UserProfile);
-          setFullName(activeProfile.full_name || "");
-          setUsername(activeProfile.username || "");
-          setBio(activeProfile.bio || "");
-          setWebsite(activeProfile.website || "");
-          setAvatarUrl(activeProfile.avatar_url || "");
-          setCoverUrl(activeProfile.cover_url || "");
-        }
-
-        setFollowerCount(data.followerCount || 0);
-        setFollowingCount(data.followingCount || 0);
-
-        const { likedIds, repostedIds } = data.interactionStatus;
-        
-        // Helper to combine posts from different categories
-        const combinedRaw = [
-          ...(data.posts || []),
-          ...(data.reposts || []),
-          ...(data.replies || []),
-          ...(data.likes || [])
-        ];
-
-        // Deduplicate
-        const uniqueMap = new Map();
-        combinedRaw.forEach(p => { if(p) uniqueMap.set(p.id, p); });
-        const allVisiblePosts = Array.from(uniqueMap.values());
-        
-        allVisiblePosts.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-
-        // Extract specific IDs for tab filtering from the raw response categories
-        const targetLikedIds = new Set((data.likes || []).map((p: any) => p?.id));
-        const targetRepliedIds = new Set((data.replies || []).map((p: any) => p?.id));
-        const targetRepostedIds = new Set((data.reposts || []).map((p: any) => p?.id));
-
-        const mappedPosts: PostData[] = allVisiblePosts.map((post: any) => ({
-          id: post.id,
-          author: {
-            id: post.author_id,
-            name: post.author?.full_name || 'User',
-            handle: post.author?.username || 'user',
-            avatar: post.author?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${post.author_id}`,
-          },
-          content: post.content,
-          created_at: post.created_at,
-          timestamp: new Date(post.created_at).toLocaleString(),
-          likes: post.likes?.[0]?.count || 0,
-          comments: post.comments?.[0]?.count || 0,
-          reposts: post.reposts?.[0]?.count || 0,
-          isLiked: likedIds.includes(post.id),
-          isReposted: repostedIds.includes(post.id),
-          _isTargetLiked: targetLikedIds.has(post.id),
-          _isTargetReplied: targetRepliedIds.has(post.id),
-          _isTargetReposted: targetRepostedIds.has(post.id),
-          image: post.image,
-          location: post.location,
-          reposted_post_id: post.reposted_post_id,
-          original_post: post.original_post ? {
-            id: post.original_post.id,
-            author: {
-              id: post.original_post.author_id,
-              name: post.original_post.author?.full_name || 'User',
-              handle: post.original_post.author?.username || 'user',
-              avatar: post.original_post.author?.avatar_url || ''
-            },
-            content: post.original_post.content,
-            timestamp: new Date(post.original_post.created_at).toLocaleString(),
-            created_at: post.original_post.created_at,
-            likes: post.original_post.likes?.[0]?.count || 0,
-            comments: post.original_post.comments?.[0]?.count || 0,
-            reposts: post.original_post.reposts?.[0]?.count || 0,
-            image: post.original_post.image
-          } : null
-        }));
-
-        setPosts(mappedPosts);
-      } catch (err) {
-        console.error("Error loading profile:", err);
-      } finally {
-        setLoading(false);
+        if (upsertError) throw upsertError;
+        activeProfile = upsertData as any;
       }
-    };
 
-    loadProfile();
+      if (activeProfile) {
+        setProfile(activeProfile as UserProfile);
+        setFullName(activeProfile.full_name || "");
+        setUsername(activeProfile.username || "");
+        setBio(activeProfile.bio || "");
+        setWebsite(activeProfile.website || "");
+        setAvatarUrl(activeProfile.avatar_url || "");
+        setCoverUrl(activeProfile.cover_url || "");
+      }
+
+      setFollowerCount(data.followerCount || 0);
+      setFollowingCount(data.followingCount || 0);
+
+      const { likedIds, repostedIds } = data.interactionStatus;
+      
+      const combinedRaw = [
+        ...(data.posts || []),
+        ...(data.reposts || []),
+        ...(data.replies || []),
+        ...(data.likes || [])
+      ];
+
+      const uniqueMap = new Map();
+      combinedRaw.forEach(p => { if(p) uniqueMap.set(p.id, p); });
+      const allVisiblePosts = Array.from(uniqueMap.values());
+      
+      allVisiblePosts.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+      const targetLikedIds = new Set((data.likes || []).map((p: any) => p?.id));
+      const targetRepliedIds = new Set((data.replies || []).map((p: any) => p?.id));
+      const targetRepostedIds = new Set((data.reposts || []).map((p: any) => p?.id));
+
+      const mappedPosts: PostData[] = allVisiblePosts.map((post: any) => ({
+        id: post.id,
+        author: {
+          id: post.author_id,
+          name: post.author?.full_name || 'User',
+          handle: post.author?.username || 'user',
+          avatar: post.author?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${post.author_id}`,
+        },
+        author_id: post.author_id,
+        content: post.content,
+        created_at: post.created_at,
+        timestamp: new Date(post.created_at).toLocaleString(),
+        likes: post.likes_count || 0,
+        comments: post.comments_count || 0,
+        reposts: post.reposts_count || 0,
+        isLiked: likedIds.includes(post.id),
+        isReposted: repostedIds.includes(post.id),
+        _isTargetLiked: targetLikedIds.has(post.id),
+        _isTargetReplied: targetRepliedIds.has(post.id),
+        _isTargetReposted: targetRepostedIds.has(post.id),
+        image: post.image,
+        location: post.location,
+        reposted_post_id: post.reposted_post_id,
+        original_post: post.original_post ? {
+          id: post.original_post.id,
+          author: {
+            id: post.original_post.author_id,
+            name: post.original_post.author?.full_name || 'User',
+            handle: post.original_post.author?.username || 'user',
+            avatar: post.original_post.author?.avatar_url || ''
+          },
+          content: post.original_post.content,
+          timestamp: new Date(post.original_post.created_at).toLocaleString(),
+          created_at: post.original_post.created_at,
+          likes: post.original_post.likes_count || 0,
+          comments: post.original_post.comments_count || 0,
+          reposts: post.original_post.reposts_count || 0,
+          image: post.original_post.image
+        } : null
+      }));
+
+      setPosts(mappedPosts);
+    } catch (err) {
+      console.error("Error loading profile:", err);
+    } finally {
+      setLoading(false);
+    }
   }, [targetUserId, isOwnProfile, currentUser?.id]);
+
+  useEffect(() => {
+    loadProfile();
+  }, [loadProfile]);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -248,7 +246,6 @@ export function Profile() {
       let finalAvatarUrl = avatarUrl;
       let finalCoverUrl = coverUrl;
 
-      // Upload Avatar
       if (avatarFile) {
         const compressedAvatar = await compressImage(avatarFile);
         const fileName = `avatars/${currentUser.id}-${Date.now()}.jpg`;
@@ -258,7 +255,6 @@ export function Profile() {
         finalAvatarUrl = publicUrl;
       }
 
-      // Upload Cover
       if (coverFile) {
         const compressedCover = await compressImage(coverFile);
         const fileName = `covers/${currentUser.id}-${Date.now()}.jpg`;
@@ -314,7 +310,6 @@ export function Profile() {
     setFollowList([]);
 
     try {
-      // Query for followers or following
       const isFollowers = type === 'followers';
       const { data, error } = await supabase
         .from('follows')
@@ -334,10 +329,9 @@ export function Profile() {
       if (error) throw error;
       
       if (data) {
-        // Map the joined data to get the profiles
         const profiles = data
           .map((item: any) => item.user)
-          .filter(u => u !== null); // Filter out any null joins
+          .filter(u => u !== null);
         setFollowList(profiles);
       }
     } catch (err) {
@@ -358,8 +352,7 @@ export function Profile() {
       <header className="sticky top-0 bg-white/80 dark:bg-dark/80 backdrop-blur-md border-b border-gray-200 dark:border-gray-800 p-2 z-40 flex items-center gap-6">
         <button
           onClick={() => navigate(-1)}
-          // Fixed: Changed text color to text-black for light mode
-          className="p-2 hover:bg-gray-800 rounded-full transition-colors text-white"
+          className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors text-black dark:text-white"
         >
           <ArrowLeft size={20} />
         </button>
@@ -370,14 +363,14 @@ export function Profile() {
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: 10 }}
-                className="text-xl font-bold text-white truncate max-w-[200px]"
+                className="text-xl font-bold text-black dark:text-white truncate max-w-[200px]"
               >
                 {profile?.full_name}
               </motion.h2>
             )}
           </AnimatePresence>
           {!showStickyName && (
-             <h2 className="text-xl font-bold text-white transition-all duration-300">Profile</h2>
+             <h2 className="text-xl font-bold text-black dark:text-white transition-all duration-300">Profile</h2>
           )}
           <p className="text-xs text-gray-600 dark:text-gray-400">
             {posts.length} Posts
@@ -385,9 +378,8 @@ export function Profile() {
         </div>
       </header>
 
-      {/* Banner Area */}
       <div className="relative">
-        <div className="relative h-32 sm:h-48 bg-gray-800 overflow-hidden z-10">
+        <div className="relative h-32 sm:h-48 bg-gray-200 dark:bg-gray-800 overflow-hidden z-10">
           {coverUrl ? (
             <img src={coverUrl} className="w-full h-full object-cover" alt="Cover" />
           ) : (
@@ -421,7 +413,6 @@ export function Profile() {
           </AnimatePresence>
         </div>
 
-        {/* AVATAR WRAPPER - Now outside overflow-hidden but absolutely positioned */}
         <div 
           onClick={() => !isEditing && setShowAvatarModal(true)}
           className={`absolute -bottom-16 left-4 w-32 h-32 bg-white dark:bg-dark rounded-full border-4 border-white dark:border-dark overflow-hidden z-20 group shadow-lg ${!isEditing ? 'cursor-zoom-in hover:scale-[1.02] transition-transform' : ''}`}
@@ -437,7 +428,6 @@ export function Profile() {
             className="w-full h-full object-cover bg-gray-100 dark:bg-gray-800"
           />
 
-          {/* EDIT MODE AVATAR OVERLAY */}
           <AnimatePresence>
             {isEditing && (
               <motion.div
@@ -464,7 +454,7 @@ export function Profile() {
 
                 <button
                   onClick={handleRemoveAvatar}
-                  className="p-2 bg-white/90 dark:bg-black/60 backdrop-blur-md border border-gray-200 dark:border-white/20 text-gray-800 dark:text-white hover:bg-red-500 hover:text-white hover:border-red-500 dark:hover:bg-red-500 rounded-full transition-colors shadow-lg"
+                  className="p-2 bg-white/90 dark:bg-black/60 backdrop-blur-md border border-gray-200 dark:border-white/20 text-gray-800 dark:text-white hover:bg-red-50 hover:text-white hover:border-red-500 dark:hover:bg-red-500 rounded-full transition-colors shadow-lg"
                   title="Remove photo"
                 >
                   <X size={18} />
@@ -545,7 +535,7 @@ export function Profile() {
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
                   placeholder="Full name"
-                  className="w-full p-3 border border-gray-300 dark:border-gray-700 rounded-xl bg-transparent text-white focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-all placeholder-gray-400"
+                  className="w-full p-3 border border-gray-300 dark:border-gray-700 rounded-xl bg-transparent text-black dark:text-white focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-all placeholder-gray-400"
                 />
               </div>
 
@@ -557,7 +547,7 @@ export function Profile() {
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   placeholder="Username"
-                  className="w-full p-3 border border-gray-300 dark:border-gray-700 rounded-xl bg-transparent text-white focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-all placeholder-gray-400"
+                  className="w-full p-3 border border-gray-300 dark:border-gray-700 rounded-xl bg-transparent text-black dark:text-white focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-all placeholder-gray-400"
                 />
               </div>
 
@@ -569,7 +559,7 @@ export function Profile() {
                   value={bio}
                   onChange={(e) => setBio(e.target.value)}
                   placeholder="Bio"
-                  className="w-full p-3 border border-gray-300 dark:border-gray-700 rounded-xl bg-transparent text-white focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-all resize-none placeholder-gray-400"
+                  className="w-full p-3 border border-gray-300 dark:border-gray-700 rounded-xl bg-transparent text-black dark:text-white focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-all resize-none placeholder-gray-400"
                   rows={3}
                 />
               </div>
@@ -582,7 +572,7 @@ export function Profile() {
                   value={website}
                   onChange={(e) => setWebsite(e.target.value)}
                   placeholder="Website URL"
-                  className="w-full p-3 border border-gray-300 dark:border-gray-700 rounded-xl bg-transparent text-white focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-all placeholder-gray-400"
+                  className="w-full p-3 border border-gray-300 dark:border-gray-700 rounded-xl bg-transparent text-black dark:text-white focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-all placeholder-gray-400"
                 />
               </div>
 
@@ -597,12 +587,12 @@ export function Profile() {
             </motion.div>
           ) : (
             <>
-              <h1 className="text-2xl font-bold text-white leading-tight">
+              <h1 className="text-2xl font-bold text-black dark:text-white leading-tight">
                 {profile?.full_name}
               </h1>
               <p className="text-gray-500">@{profile?.username}</p>
 
-              <p className="mt-3 text-[15px] text-gray-200">{profile?.bio}</p>
+              <p className="mt-3 text-[15px] text-gray-800 dark:text-gray-200">{profile?.bio}</p>
 
               <div className="flex flex-wrap gap-4 mt-3 text-gray-600 dark:text-gray-400 text-sm">
                 {profile?.website && (
@@ -637,7 +627,7 @@ export function Profile() {
                   onClick={() => openFollowModal('following')}
                   className="hover:underline transition-all flex gap-1 items-center group"
                 >
-                  <span className="text-white font-bold group-hover:text-brand">
+                  <span className="text-black dark:text-white font-bold group-hover:text-brand">
                     {isOwnProfile ? followingIds.length : followingCount}
                   </span>{" "}
                   <span className="text-gray-600 dark:text-gray-400">
@@ -648,7 +638,7 @@ export function Profile() {
                   onClick={() => openFollowModal('followers')}
                   className="hover:underline transition-all flex gap-1 items-center group"
                 >
-                  <span className="text-white font-bold group-hover:text-brand">
+                  <span className="text-black dark:text-white font-bold group-hover:text-brand">
                     {targetUserId && followerCounts[targetUserId] !== undefined
                       ? followerCounts[targetUserId]
                       : followerCount}
@@ -692,7 +682,7 @@ export function Profile() {
        <div className="min-h-[400px]">
          {activeTab === "Posts" ? (
            <div>
-             {posts.filter(p => !p.reposted_post_id && p.author.id === targetUserId).map((post, idx) => (
+             {posts.filter(p => !p.reposted_post_id && (p.author_id === targetUserId || p.author?.id === targetUserId)).map((post, idx) => (
                <Post
                  key={post.id}
                  post={post}
@@ -704,9 +694,29 @@ export function Profile() {
                  setActiveDropdownId={setActiveDropdownId}
                />
              ))}
-             {posts.filter(p => !p.reposted_post_id && p.author.id === targetUserId).length === 0 && !loading && (
+             {posts.filter(p => !p.reposted_post_id && (p.author_id === targetUserId || p.author?.id === targetUserId)).length === 0 && !loading && (
                <div className="p-10 text-center text-gray-500">
                  No posts shared yet.
+               </div>
+             )}
+           </div>
+         ) : activeTab === "Quotes" ? (
+           <div>
+             {posts.filter(p => p.reposted_post_id && (p.author_id === targetUserId || p.author?.id === targetUserId)).map((post, idx) => (
+               <Post
+                 key={post.id}
+                 post={post}
+                 index={idx}
+                 onLike={() => toggleLike(post.id)}
+                 onComment={(content) => addComment(post.id, content)}
+                 onRepost={() => toggleRepost(post.id)}
+                 activeDropdownId={activeDropdownId} 
+                 setActiveDropdownId={setActiveDropdownId}
+               />
+             ))}
+             {posts.filter(p => p.reposted_post_id && (p.author_id === targetUserId || p.author?.id === targetUserId)).length === 0 && !loading && (
+               <div className="p-10 text-center text-gray-500">
+                 No quotes yet.
                </div>
              )}
            </div>
@@ -784,7 +794,6 @@ export function Profile() {
         </div>
       )}
 
-      {/* Profile Image Viewer Modal */}
       <AnimatePresence>
         {showAvatarModal && (
           <motion.div
@@ -817,7 +826,6 @@ export function Profile() {
         )}
       </AnimatePresence>
 
-      {/* Follows List Modal */}
       <AnimatePresence>
         {followModalOpen && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">

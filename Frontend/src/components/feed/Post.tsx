@@ -92,17 +92,44 @@ export const Post = memo(function Post({ post, index, onLike, onRepost, onCommen
     }
   };
 
+  const [isSubmittingComment, setIsSubmittingComment] = useState(false);
+  const [isSubmittingLike, setIsSubmittingLike] = useState(false);
+  const [isSubmittingRepost, setIsSubmittingRepost] = useState(false);
+
   const submitComment = async () => {
-    if (!commentText.trim()) return;
-    await onComment(commentText.trim());
-    setCommentText('');
-
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
+    if (!commentText.trim() || isSubmittingComment) return;
+    setIsSubmittingComment(true);
+    try {
+      await onComment(commentText.trim());
+      setCommentText('');
+      if (textareaRef.current) {
+        textareaRef.current.style.height = 'auto';
+      }
+      const data = await getComments(post.id);
+      setComments(data);
+    } finally {
+      setIsSubmittingComment(false);
     }
+  };
 
-    const data = await getComments(post.id);
-    setComments(data);
+  const handleLike = async () => {
+    if (isSubmittingLike) return;
+    setIsSubmittingLike(true);
+    try {
+      await onLike();
+    } finally {
+      setTimeout(() => setIsSubmittingLike(false), 500); // 500ms cooldown
+    }
+  };
+
+  const handleRepost = async () => {
+    if (isSubmittingRepost) return;
+    setIsSubmittingRepost(true);
+    try {
+      await onRepost();
+    } finally {
+      setTimeout(() => setIsSubmittingRepost(false), 500); // 500ms cooldown
+    }
   };
 
   const handleCopyLink = () => {
@@ -365,7 +392,7 @@ export const Post = memo(function Post({ post, index, onLike, onRepost, onCommen
                       className="absolute bottom-full mb-2 left-0 w-44 bg-white dark:bg-[#15202B]/95 backdrop-blur-xl border border-gray-200 dark:border-gray-700/50 rounded-2xl shadow-2xl overflow-hidden z-50 p-1"
                     >
                       <button
-                        onClick={() => { onRepost(); setRepostMenuOpen(false); }}
+                        onClick={() => { handleRepost(); setRepostMenuOpen(false); }}
                         className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-100 dark:hover:bg-white/5 rounded-xl transition-colors text-sm font-bold text-gray-700 dark:text-gray-200"
                       >
                         <Repeat size={18} /> {post.isReposted ? 'Undo Repost' : 'Repost'}
@@ -381,7 +408,7 @@ export const Post = memo(function Post({ post, index, onLike, onRepost, onCommen
                 )}
               </AnimatePresence>
             </div>
-            <ActionIcon icon={Heart} count={post.likes} hoverColor="hover:text-pink-500" hoverBg="group-hover:bg-pink-500/10" activeBg="bg-pink-500/10" isActive={post.isLiked ?? false} activeColor="text-pink-500" fillIcon={post.isLiked ?? false} onClick={onLike} />
+            <ActionIcon icon={Heart} count={post.likes} hoverColor="hover:text-pink-500" hoverBg="group-hover:bg-pink-500/10" activeBg="bg-pink-500/10" isActive={post.isLiked ?? false} activeColor="text-pink-500" fillIcon={post.isLiked ?? false} onClick={handleLike} />
 
             {/* Share Wrapper */}
             <div className="relative">
@@ -452,11 +479,11 @@ export const Post = memo(function Post({ post, index, onLike, onRepost, onCommen
                     />
                   </div>
                   <motion.button
-                    type="button" whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={submitComment} disabled={!commentText.trim()}
-                    className={`px-5 py-2.5 rounded-full text-sm font-bold shadow-md transition-all h-fit mb-[2px] ${commentText.trim() ? 'bg-brand text-brand-contrast hover:opacity-90' : 'bg-gray-800 text-gray-500 cursor-not-allowed'
+                    type="button" whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={submitComment} disabled={!commentText.trim() || isSubmittingComment}
+                    className={`px-5 py-2.5 rounded-full text-sm font-bold shadow-md transition-all h-fit mb-[2px] ${commentText.trim() && !isSubmittingComment ? 'bg-brand text-brand-contrast hover:opacity-90' : 'bg-gray-800 text-gray-500 cursor-not-allowed'
                       }`}
                   >
-                    Reply
+                    {isSubmittingComment ? '...' : 'Reply'}
                   </motion.button>
                 </div>
               </motion.div>

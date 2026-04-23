@@ -10,6 +10,8 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '../utils/supabase';
 import { useAuth } from '../context/AuthContext';
+import { useNotification } from '../context/NotificationContext';
+import { useNavigate } from 'react-router-dom';
 import { useData } from '../context/DataContext';
 
 // Standard icons based on type
@@ -39,8 +41,11 @@ interface SupabaseNotification {
 export default function Notifications() {
   const { user } = useAuth();
   const { initialData } = useData();
+  const navigate = useNavigate();
+  const { showNotification } = useNotification();
   const [notifications, setNotifications] = useState<SupabaseNotification[]>([]);
   const [filter, setFilter] = useState<'all' | 'unread'>('all');
+  const [followingIds, setFollowingIds] = useState<string[]>([]);
 
   const fetchNotifications = async () => {
     if (!user) return;
@@ -67,10 +72,29 @@ export default function Notifications() {
 
       if (error) throw error;
       setNotifications(data || []);
+
+      // Fetch following status to show/hide follow back button
+      const { data: followData } = await supabase.from('follows').select('following_user_id').eq('follower_id', user.id);
+      setFollowingIds((followData || []).map(f => f.following_user_id));
     } catch (err) {
       console.error('Error fetching notifications:', err);
-    } finally {
-      // Done
+    }
+  };
+
+  const handleFollowBack = async (targetId: string) => {
+    if (!user) return;
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:10000'}/api/queue-activity`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-user-id': user.id },
+        body: JSON.stringify({ type: 'FOLLOW', payload: { targetId, action: 'follow' } })
+      });
+      if (response.ok) {
+        setFollowingIds(prev => [...prev, targetId]);
+        showNotification('Following back!', 'success');
+      }
+    } catch (err) {
+      console.error('Follow back failed:', err);
     }
   };
 
@@ -186,6 +210,25 @@ export default function Notifications() {
                         <span className="text-xs text-gray-500">{new Date(notification.created_at).toLocaleDateString()}</span>
                       </div>
                       <p className="text-sm text-gray-400 line-clamp-2">{notification.message}</p>
+                      
+                      <div className="mt-3 flex gap-2">
+                        {notification.type === 'follow' && !followingIds.includes(notification.senderid) && (
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); handleFollowBack(notification.senderid); }}
+                            className="px-4 py-1.5 bg-brand text-white text-xs font-bold rounded-full hover:bg-brand-dark transition-all shadow-lg shadow-brand/20"
+                          >
+                            Follow Back
+                          </button>
+                        )}
+                        {notification.type === 'message' && (
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); navigate('/messages'); }}
+                            className="px-4 py-1.5 bg-gray-800 text-white text-xs font-bold rounded-full hover:bg-gray-700 transition-all"
+                          >
+                            View Chat
+                          </button>
+                        )}
+                      </div>
                     </div>
 
                     <button 

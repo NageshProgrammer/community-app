@@ -1,8 +1,9 @@
 import { io } from 'socket.io-client';
 
 const isProd = import.meta.env.PROD;
-const fallbackUrl = isProd ? window.location.origin : 'http://localhost:10000';
-const BACKEND_URL = (import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || fallbackUrl).replace(/\/$/, '');
+export const BACKEND_URL = isProd 
+  ? (import.meta.env.VITE_BACKEND_URL || window.location.origin).replace(/\/$/, '')
+  : 'http://localhost:10000';
 
 // Create the socket instance with preferred transports
 export const socket = io(BACKEND_URL, {
