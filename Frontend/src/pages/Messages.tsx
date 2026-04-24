@@ -15,6 +15,7 @@ import { useAuth } from '../context/AuthContext';
 import { useNotification } from '../context/NotificationContext';
 import { useData } from '../context/DataContext';
 import { supabase } from '../utils/supabase';
+import { socket } from '../utils/socket';
 
 type Chat = {
   id: string;
@@ -136,11 +137,22 @@ export default function Messages() {
       }
     };
 
+    const handleMessagesRead = ({ conversationId }: { conversationId: string }) => {
+      setChats(prev => prev.map(chat => 
+        chat.id === conversationId ? { ...chat, unreadCount: 0 } : chat
+      ));
+    };
+
+    socket.on('messages_read', handleMessagesRead);
+
     if (selectedChatId === null) {
       fetchConversations();
     }
 
-    return () => controller.abort();
+    return () => {
+      controller.abort();
+      socket.off('messages_read', handleMessagesRead);
+    };
   }, [user, initialData, selectedChatId]);
 
   const initializingChat = useRef(false);

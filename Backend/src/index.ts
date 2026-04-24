@@ -301,6 +301,10 @@ app.post('/api/conversations/:id/read', async (req, res) => {
   if (!userId) return res.status(401).json({ error: 'Unauthorized' });
   try {
     await supabase.from('messages').update({ isread: true }).eq('conversationid', id).neq('senderid', userId).eq('isread', false);
+    
+    // Broadcast to the user's personal room so their UI refreshes
+    io.to(userId).emit('messages_read', { conversationId: id });
+    
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: 'Failed' }); }
 });
