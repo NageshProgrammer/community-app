@@ -6,6 +6,7 @@ import { usePosts, type CommentData, type PostData } from '../../context/PostCon
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useNotification } from '../../context/NotificationContext';
+import { socket } from '../../utils/socket';
 
 interface PostProps {
   post: PostData;
@@ -84,6 +85,25 @@ export const Post = memo(function Post({ post, index, onLike, onRepost, onCommen
     }
   }, [showCommentInput, post.id, getComments]);
 
+  useEffect(() => {
+    const handleNewComment = (comment: any) => {
+      if (comment.post_id === post.id) {
+        setComments(prev => {
+          // Remove temp comment with matching content to avoid duplicates
+          const filtered = prev.filter(c => !(c.id.startsWith('temp-') && c.content === comment.content));
+          // Don't add if we already have it
+          if (filtered.some(c => c.id === comment.id)) return filtered;
+          return [...filtered, comment];
+        });
+      }
+    };
+
+    socket.on('new_comment', handleNewComment);
+    return () => {
+      socket.off('new_comment', handleNewComment);
+    };
+  }, [post.id]);
+
   const handleCommentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setCommentText(e.target.value);
     if (textareaRef.current) {
@@ -99,14 +119,38 @@ export const Post = memo(function Post({ post, index, onLike, onRepost, onCommen
   const submitComment = async () => {
     if (!commentText.trim() || isSubmittingComment) return;
     setIsSubmittingComment(true);
+    
+    const text = commentText.trim();
+    
+    // OPTIMISTIC UPDATE: Add immediately to local view
+    const optimisticComment: CommentData = {
+      id: `temp-${Date.now()}`,
+      content: text,
+      created_at: new Date().toISOString(),
+      author: {
+        id: user?.id || '',
+        name: user?.user_metadata?.full_name || 'You',
+        handle: user?.user_metadata?.username || 'user',
+        avatar: user?.user_metadata?.avatar_url || ''
+      }
+    };
+    
+    setComments(prev => [...prev, optimisticComment]);
+    
     try {
-      await onComment(commentText.trim());
+      await onComment(text);
       setCommentText('');
       if (textareaRef.current) {
         textareaRef.current.style.height = 'auto';
       }
-      const data = await getComments(post.id);
-      setComments(data);
+      // Wait a moment for DB processing before refetching to replace the optimistic ID
+      setTimeout(async () => {
+        const data = await getComments(post.id);
+        setComments(data);
+      }, 1500);
+    } catch (err) {
+      // Revert if it fails
+      setComments(prev => prev.filter(c => c.id !== optimisticComment.id));
     } finally {
       setIsSubmittingComment(false);
     }

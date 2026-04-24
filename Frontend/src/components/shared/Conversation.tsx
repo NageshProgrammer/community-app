@@ -1110,6 +1110,39 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
                       <p className="text-[10px] text-[#EA0038]/60 uppercase tracking-widest font-black">Archive Conversation</p>
                     </div>
                   </motion.button>
+                  
+                  {currentUserIsAdmin && (
+                    <motion.button
+                      whileHover={{ x: 5 }}
+                      onClick={async () => {
+                        if (window.confirm("Are you sure you want to completely delete this group? This cannot be undone.")) {
+                          try {
+                            const response = await fetch(`${BACKEND_URL}/api/conversations/${chat.id}`, {
+                              method: 'DELETE',
+                              headers: { 'x-user-id': user?.id || '' }
+                            });
+                            if (response.ok) {
+                              onBack();
+                            } else {
+                              const err = await response.json();
+                              showNotification(err.error || 'Failed to delete group', 'error');
+                            }
+                          } catch (err) {
+                            showNotification('Error deleting group', 'error');
+                          }
+                        }
+                      }}
+                      className="w-full flex items-center gap-4 p-5 rounded-2xl text-red-500 font-bold hover:bg-red-500/10 transition-all border border-red-500/20 group mt-2"
+                    >
+                      <div className="w-10 h-10 rounded-full bg-red-500/10 flex items-center justify-center group-hover:bg-red-500/20">
+                        <Trash2 size={20} />
+                      </div>
+                      <div className="text-left">
+                        <p className="text-base">Delete Group</p>
+                        <p className="text-[10px] text-red-500/60 uppercase tracking-widest font-black">Permanently delete for everyone</p>
+                      </div>
+                    </motion.button>
+                  )}
                 </div>
 
                 {/* Footer Quote */}

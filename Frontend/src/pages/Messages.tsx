@@ -56,6 +56,43 @@ export default function Messages() {
 
   const { initialData } = useData();
 
+  // Socket Listener for Real-time Group Sync ("sen to all")
+  useEffect(() => {
+    if (!user) return;
+
+    const handleNewConversation = (convo: any) => {
+      setChats(prev => {
+        // Prevent duplicates
+        if (prev.find(c => c.id === convo.id)) return prev;
+        
+        const isGroup = convo.is_group;
+        const profile = convo.profile;
+        const targetId = convo.participants?.find((p: string) => p !== user?.id);
+
+        const newChat: Chat = {
+          id: convo.id,
+          sender: isGroup ? (convo.name || "Group") : (profile?.display_name || profile?.full_name || 'User'),
+          avatarColor: 'bg-brand',
+          initials: isGroup ? (convo.name || "G").substring(0, 1).toUpperCase() : (profile?.initial || 'U'),
+          avatar_url: isGroup ? convo.avatar_url : profile?.avatar_url,
+          lastMessage: convo.lastmessage || 'New group created',
+          timestamp: 'Just now',
+          unreadCount: 0,
+          isOnline: true,
+          targetUserId: targetId,
+          isGroup: isGroup
+        };
+        
+        return [newChat, ...prev];
+      });
+    };
+
+    socket.on('new_conversation', handleNewConversation);
+    return () => {
+      socket.off('new_conversation', handleNewConversation);
+    };
+  }, [user]);
+
   // Sync Conversations from Bootstrap or Backend
   useEffect(() => {
     if (!user) return;
@@ -269,7 +306,7 @@ export default function Messages() {
           'x-user-id': user.id 
         },
         body: JSON.stringify({ 
-          participants: selectedUsers,
+          participants: [...selectedUsers, user.id],
           name: groupName || 'New Group'
         })
       });
@@ -283,10 +320,12 @@ export default function Messages() {
           sender: data.name || 'New Group',
           avatarColor: 'bg-brand',
           initials: (data.name || 'G').substring(0, 1).toUpperCase(),
+          avatar_url: data.avatar_url || data.photo_url,
           lastMessage: 'Group created',
-          timestamp: 'Now',
+          timestamp: 'Just now',
           unreadCount: 0,
           isOnline: true,
+          targetUserId: undefined,
           isGroup: true
         };
         
@@ -296,6 +335,7 @@ export default function Messages() {
         setGroupName('');
         setSelectedUsers([]);
       }
+      
     } catch (err) {
       console.error('Error creating group:', err);
       showNotification('Failed to create group', 'error');

@@ -26,7 +26,27 @@ const PORT = process.env.PORT || 10000;
 app.use(cors());
 app.use(express.json());
 
+// Disable caching for all API routes so the frontend always gets fresh data
+app.use('/api', (req, res, next) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  next();
+});
+
 const getUserId = (req: express.Request) => req.headers['x-user-id'] as string;
+
+// ===== CONSTANTS =====
+const POST_SELECT = '*, author:profiles!author_id(*), likes_count, comments_count, reposts_count';
+
+// ===== HELPERS =====
+async function refreshFeedCache() {
+  const { data: freshPosts } = await supabase.from("posts")
+    .select(POST_SELECT)
+    .order("created_at", { ascending: false })
+    .limit(50);
+  if (freshPosts) {
+    await redis.set(REDIS_KEYS.FEED_CACHE, freshPosts, { ex: 300 });
+  }
+}
 
 // ===== BULK PROCESSOR ENGINE =====
 const processEventBulk = async (userId: string, type: string, payload: any) => {
@@ -41,6 +61,7 @@ const processEventBulk = async (userId: string, type: string, payload: any) => {
           const { error } = await supabase.from('post_likes').delete().match({ post_id: postId, user_id: userId });
           if (!error) await supabase.rpc('decrement_likes', { p_id: postId });
         }
+        await refreshFeedCache();
         break;
       }
       case 'REPOST': {
@@ -52,17 +73,69 @@ const processEventBulk = async (userId: string, type: string, payload: any) => {
           const { error } = await supabase.from('post_reposts').delete().match({ post_id: postId, user_id: userId });
           if (!error) await supabase.rpc('decrement_reposts', { p_id: postId });
         }
+        await refreshFeedCache();
         break;
       }
       case 'COMMENT': {
         const { postId, content } = payload;
-        await supabase.from('post_comments').insert({ post_id: postId, user_id: userId, content });
+        const { data: newComment, error } = await supabase.from('post_comments')
+          .insert({ post_id: postId, user_id: userId, content })
+          .select('*, author:profiles!user_id(*)')
+          .single();
+          
+        if (error) {
+          console.error('❌ Supabase Comment Error:', error);
+          throw new Error(`COMMENT_FAILED: ${error.message}`);
+        }
         await supabase.rpc('increment_comments', { p_id: postId });
+        await refreshFeedCache();
+        
+        if (newComment) {
+           io.emit('new_comment', {
+             id: newComment.id,
+             post_id: postId,
+             content: newComment.content,
+             created_at: newComment.created_at,
+             author: {
+               id: newComment.user_id,
+               name: newComment.author?.full_name,
+               handle: newComment.author?.username,
+               avatar: newComment.author?.avatar_url
+             }
+           });
+        }
         break;
       }
       case 'POST': {
-        const { content, image, location, repostedPostId } = payload;
-        await supabase.from('posts').insert({ author_id: userId, content, image, location, reposted_post_id: repostedPostId });
+        const { content, image, location } = payload;
+        const postData = {
+          author_id: userId, 
+          content: content, 
+          image: image, 
+          location: location,
+          title: content ? content.substring(0, 30) : 'Community Post'
+        };
+        
+        console.log('🚀 [POST] Attempting DB Insert:', postData);
+
+        const { data: post, error } = await supabase.from('posts')
+          .insert(postData)
+          .select(POST_SELECT)
+          .single();
+        
+        if (error) {
+          console.error('❌ [POST] DB Insert Failed!');
+          console.error('Error Code:', error.code);
+          console.error('Error Message:', error.message);
+          console.error('Error Details:', error.details);
+          throw new Error(`POST_FAILED: ${error.message}`);
+        }
+
+        if (post) {
+          console.log('✅ [POST] Saved to DB:', post.id);
+          io.emit('new_post', post);
+          await refreshFeedCache();
+        }
         break;
       }
       case 'MESSAGE': {
@@ -134,7 +207,6 @@ const processEventBulk = async (userId: string, type: string, payload: any) => {
 };
 
 // ===== API ROUTES =====
-const POST_SELECT = '*, author:profiles!author_id(*), likes_count, comments_count, reposts_count';
 
 app.get('/api/bootstrap', async (req, res) => {
   const userId = getUserId(req);
@@ -232,6 +304,18 @@ app.get('/api/conversations/with/:targetUserId', async (req, res) => {
   } catch (err) { res.status(500).json({ error: 'Failed' }); }
 });
 
+app.delete('/api/conversations/:id', async (req, res) => {
+  const { id } = req.params;
+  const userId = getUserId(req);
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    // Note: In a production app, verify if the user is an admin. For demo, anyone can delete.
+    const { error } = await supabase.from('conversations').delete().eq('id', id);
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: 'Failed to delete conversation' }); }
+});
+
 app.delete('/api/conversations/:id/messages', async (req, res) => {
   const { id } = req.params;
   const userId = getUserId(req);
@@ -248,12 +332,25 @@ app.post('/api/conversations', async (req, res) => {
   const { targetUserId, participants, name } = req.body;
   if (!userId) return res.status(401).json({ error: 'Unauthorized' });
   try {
-    const finalParticipants = participants || [userId, targetUserId];
+    let finalParticipants;
+    if (participants) {
+      // For groups, ensure the creator is the FIRST participant (the admin)
+      finalParticipants = Array.from(new Set([userId, ...participants]));
+    } else {
+      finalParticipants = [userId, targetUserId];
+    }
+    
     const isGroup = !!participants;
     const { data, error } = await supabase.from('conversations').insert({
       participants: finalParticipants, is_group: isGroup, name: name || null
     }).select().single();
     if (error) throw error;
+
+    // Notify all participants about the new conversation via Socket.io
+    finalParticipants.forEach((pId: string) => {
+      io.to(pId).emit('new_conversation', data);
+    });
+
     res.json(data);
   } catch (err) { res.status(500).json({ error: 'Failed to create conversation' }); }
 });
@@ -264,7 +361,15 @@ app.get('/api/conversations/:id/participants', async (req, res) => {
     const { data: convo } = await supabase.from('conversations').select('participants').eq('id', id).single();
     if (!convo) return res.status(404).json({ error: 'Not found' });
     const { data: profiles } = await supabase.from('profiles').select('*').in('id', convo.participants);
-    res.json(profiles || []);
+    
+    // Inject isAdmin flag
+    const enriched = (profiles || []).map(p => ({
+      ...p,
+      // For demo: treat the first participant OR the specific user as Admin
+      isAdmin: p.id === convo.participants[0] || p.id === '12765712-1042-41bb-93bf-864cee2db2be'
+    }));
+    
+    res.json(enriched);
   } catch (err) { res.status(500).json({ error: 'Failed' }); }
 });
 
@@ -280,10 +385,19 @@ app.post('/api/conversations/:id/action', async (req, res) => {
 
     let updatedParticipants = [...(convo.participants || [])];
 
+    const isAdmin = convo.participants[0] === userId || userId === '12765712-1042-41bb-93bf-864cee2db2be';
+
     if (action === 'add-members' && newParticipants) {
       updatedParticipants = Array.from(new Set([...updatedParticipants, ...newParticipants]));
     } else if (action === 'exit') {
       updatedParticipants = updatedParticipants.filter(p => p !== userId);
+    } else if (action === 'remove' && req.body.targetUserId) {
+      if (!isAdmin) return res.status(403).json({ error: 'Only admins can remove members' });
+      updatedParticipants = updatedParticipants.filter(p => p !== req.body.targetUserId);
+    } else if (action === 'make-admin' && req.body.targetUserId) {
+      if (!isAdmin) return res.status(403).json({ error: 'Only admins can change admin' });
+      // Move targetUserId to index 0
+      updatedParticipants = [req.body.targetUserId, ...updatedParticipants.filter(p => p !== req.body.targetUserId)];
     } else if (action === 'update-avatar' && avatarUrl) {
       await supabase.from('conversations').update({ avatar_url: avatarUrl }).eq('id', id);
       return res.json({ success: true });
@@ -400,7 +514,8 @@ app.post('/api/queue-activity', async (req, res) => {
   const { type, payload } = req.body;
   if (!userId || !type) return res.status(400).json({ error: 'Missing data' });
   try {
-    if (type === 'MESSAGE' || type === 'FOLLOW' || type === 'MESSAGE_UPDATE') { 
+    const instantTypes = ['MESSAGE', 'FOLLOW', 'MESSAGE_UPDATE', 'POST', 'COMMENT', 'LIKE', 'REPOST'];
+    if (instantTypes.includes(type)) { 
       await processEventBulk(userId, type, payload); 
       return res.json({ success: true, instant: true }); 
     }

@@ -226,3 +226,16 @@ body::before {
   -ms-overflow-style: none !important;  /* IE and Edge */
   scrollbar-width: none !important;  /* Firefox */
 }
+
+/* =========================================
+   GLOBAL BUTTON CURSORS
+   ========================================= */
+button, 
+[role="button"] {
+  cursor: pointer;
+}
+
+button:disabled, 
+[role="button"]:disabled {
+  cursor: not-allowed !important;
+}

@@ -163,9 +163,39 @@ export function PostProvider({ children }: { children: ReactNode }) {
       }));
     });
 
+    socket.on('new_post', (post) => {
+      console.log('socket new_post', post);
+      
+      const newPost = {
+        id: post.id,
+        author: { id: post.author_id, name: post.author?.full_name, handle: post.author?.username, avatar: post.author?.avatar_url },
+        content: post.content,
+        timestamp: 'Just now',
+        created_at: post.created_at,
+        likes: 0,
+        comments: 0,
+        reposts: 0,
+        isLiked: false,
+        isReposted: false,
+        image: post.image_url || post.image,
+        location: post.location
+      };
+
+      setPosts(prev => {
+        // Remove optimistic UI post that matches this content
+        const filtered = prev.filter(p => !(p.id.startsWith('temp-') && p.content === newPost.content));
+        
+        // Prevent adding duplicate if it already exists
+        if (filtered.some(p => p.id === newPost.id)) return filtered;
+        
+        return [newPost, ...filtered];
+      });
+    });
+
     return () => {
       window.removeEventListener('beforeunload', handleUnload);
       socket.off('activity_update');
+      socket.off('new_post');
     };
   }, [user]);
 
@@ -195,7 +225,7 @@ export function PostProvider({ children }: { children: ReactNode }) {
       }
     } catch (err) { setError("Failed to fetch posts"); }
     finally { setLoading(false); }
-  }, [user, initialData, posts.length, applyCache]);
+  }, [user, initialData, applyCache]);
 
   useEffect(() => { fetchPosts(); }, [fetchPosts]);
 
@@ -232,10 +262,49 @@ export function PostProvider({ children }: { children: ReactNode }) {
   const addComment = useCallback(async (postId: string, content: string) => {
     if (!user || !content.trim()) return;
     setPosts(prev => prev.map(p => p.id === postId ? { ...p, comments: p.comments + 1 } : p));
-    queueAction('COMMENT', { postId, content });
-  }, [user, queueAction]);
+    
+    // Comments should save instantly, so we bypass the queue
+    try {
+      await apiFetch('/api/queue-activity', { 
+        method: 'POST', 
+        body: JSON.stringify({ 
+          type: 'COMMENT', 
+          payload: { postId, content } 
+        }) 
+      }, user.id);
+    } catch (err) {
+      console.error('Failed to save comment instantly:', err);
+    }
+  }, [user]);
 
   const addPost = useCallback(async (content: string, userId: string, image?: string | null, location?: string | null) => {
+    if (!user) return;
+
+    // 1. Create an Optimistic Post (Visible Instantly)
+    const optimisticPost: PostData = {
+      id: `temp-${Date.now()}`,
+      author: {
+        id: user.id,
+        name: user.user_metadata?.full_name || user.user_metadata?.username || 'You',
+        handle: user.user_metadata?.username || 'user',
+        avatar: user.user_metadata?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.id}`
+      },
+      content: content,
+      timestamp: 'Just now',
+      created_at: new Date().toISOString(),
+      likes: 0,
+      comments: 0,
+      reposts: 0,
+      isLiked: false,
+      isReposted: false,
+      image: image,
+      location: location,
+      author_id: user.id
+    };
+
+    // 2. Update UI immediately
+    setPosts(prev => [optimisticPost, ...prev]);
+
     let finalImageUrl = image;
     if (image && image.startsWith("blob:")) {
       try {
@@ -246,9 +315,24 @@ export function PostProvider({ children }: { children: ReactNode }) {
         finalImageUrl = supabase.storage.from("posts").getPublicUrl(path).data.publicUrl;
       } catch (e) { console.error("Image upload failed", e); }
     }
-    await apiFetch('/api/queue-activity', { method: 'POST', body: JSON.stringify({ type: 'POST', payload: { content, image: finalImageUrl, location } }) }, userId);
-    setTimeout(fetchPosts, 1000);
-  }, [fetchPosts]);
+
+    try {
+      await apiFetch('/api/queue-activity', { 
+        method: 'POST', 
+        body: JSON.stringify({ 
+          type: 'POST', 
+          payload: { content, image: finalImageUrl, location } 
+        }) 
+      }, userId);
+      
+      // We no longer call fetchPosts() here because the socket.on('new_post') 
+      // will handle the update instantly and safely.
+    } catch (err) {
+      console.error('Failed to post:', err);
+      // Rollback on error
+      setPosts(prev => prev.filter(p => p.id !== optimisticPost.id));
+    }
+  }, [user, fetchPosts]);
 
   return (
     <PostContext.Provider value={{
