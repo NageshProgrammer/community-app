@@ -509,10 +509,22 @@ io.on('connection', (socket) => {
   socket.on('authenticate', (uId) => { socket.join(uId); }); 
 });
 
-const frontendDistPath = path.join(__dirname, '..', '..', "Frontend", "dist");
-if (fs.existsSync(frontendDistPath)) { 
-  app.use(express.static(frontendDistPath)); 
-  app.get("*", (req, res) => res.sendFile(path.join(frontendDistPath, "index.html"))); 
+// Support for SPA Routing - Optimized for Render
+const frontendPath = path.resolve(__dirname, '../../Frontend/dist');
+if (fs.existsSync(frontendPath)) {
+  console.log(`✅ Serving Frontend from: ${frontendPath}`);
+  app.use(express.static(frontendPath));
+  
+  // Important: Do NOT serve index.html for missing assets
+  app.get(['/assets/*', '/static/*'], (req, res) => {
+    res.status(404).send('Asset not found');
+  });
+
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(frontendPath, 'index.html'));
+  });
+} else {
+  console.warn(`⚠️ Warning: Frontend dist folder not found at ${frontendPath}`);
 }
 
 httpServer.listen(PORT, () => {
