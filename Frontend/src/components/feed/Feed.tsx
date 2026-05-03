@@ -10,7 +10,7 @@ import { SearchX, ArrowLeft } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom'; 
 
 export function Feed() {
-  const { posts, addPost, toggleLike, toggleRepost, addComment, deletePost, editPost, error, loading } = usePosts();
+  const { posts, addPost, toggleLike, toggleRepost, addComment, deletePost, editPost, error } = usePosts();
   const { user } = useAuth();
   const { searchQuery, setSearchQuery } = useSocial();
   
