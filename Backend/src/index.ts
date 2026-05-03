@@ -26,6 +26,34 @@ const PORT = process.env.PORT || 10000;
 app.use(cors());
 app.use(express.json());
 
+// ===== RATE LIMITER (protects DB at 10K user scale) =====
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
+const RATE_LIMIT = 100; // max requests per window per user
+const RATE_WINDOW = 60 * 1000; // 60 second window
+
+const rateLimiter = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  const userId = (req.headers['x-user-id'] as string) || req.ip || 'anon';
+  const now = Date.now();
+  const record = rateLimitMap.get(userId);
+
+  if (!record || now > record.resetAt) {
+    rateLimitMap.set(userId, { count: 1, resetAt: now + RATE_WINDOW });
+    return next();
+  }
+  if (record.count >= RATE_LIMIT) {
+    return res.status(429).json({ error: 'Too many requests. Please slow down.' });
+  }
+  record.count++;
+  next();
+};
+
+// Clean up rate limit map every 5 minutes to prevent memory leak
+setInterval(() => {
+  const now = Date.now();
+  rateLimitMap.forEach((v, k) => { if (now > v.resetAt) rateLimitMap.delete(k); });
+}, 5 * 60 * 1000);
+
+app.use('/api', rateLimiter);
 // Disable caching for all API routes so the frontend always gets fresh data
 app.use('/api', (req, res, next) => {
   res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
@@ -38,6 +66,8 @@ const getUserId = (req: express.Request) => req.headers['x-user-id'] as string;
 const POST_SELECT = '*, author:profiles!author_id(*), likes_count, comments_count, reposts_count';
 
 // ===== HELPERS =====
+
+
 async function refreshFeedCache() {
   const { data: freshPosts } = await supabase.from("posts")
     .select(POST_SELECT)
@@ -61,6 +91,8 @@ const processEventBulk = async (userId: string, type: string, payload: any) => {
           const { error } = await supabase.from('post_likes').delete().match({ post_id: postId, user_id: userId });
           if (!error) await supabase.rpc('decrement_likes', { p_id: postId });
         }
+        // Invalidate per-user interaction cache so next feed load reflects the change
+        await redis.del(REDIS_KEYS.userInteractions(userId));
         await refreshFeedCache();
         break;
       }
@@ -73,6 +105,8 @@ const processEventBulk = async (userId: string, type: string, payload: any) => {
           const { error } = await supabase.from('post_reposts').delete().match({ post_id: postId, user_id: userId });
           if (!error) await supabase.rpc('decrement_reposts', { p_id: postId });
         }
+        // Invalidate per-user interaction cache
+        await redis.del(REDIS_KEYS.userInteractions(userId));
         await refreshFeedCache();
         break;
       }
@@ -178,6 +212,8 @@ const processEventBulk = async (userId: string, type: string, payload: any) => {
         } else {
           await supabase.from('follows').delete().match({ follower_id: userId, following_user_id: targetId });
         }
+        // Invalidate following cache for this user
+        await redis.del(REDIS_KEYS.userFollowing(userId));
         break;
       }
       case 'MESSAGE_UPDATE': {
@@ -206,70 +242,202 @@ const processEventBulk = async (userId: string, type: string, payload: any) => {
   } catch (e) { console.error(`Item Error (${type}):`, e); }
 };
 
+// Health check endpoint
+app.get('/api/health', async (req, res) => {
+  try {
+    const { data, error } = await supabase.from('profiles').select('count', { count: 'exact', head: true });
+    const redisStatus = await redis.ping();
+    res.json({ 
+      status: 'ok', 
+      database: error ? 'error' : 'connected', 
+      redis: redisStatus === 'PONG' ? 'connected' : 'error',
+      dbError: error
+    });
+  } catch (err) {
+    res.status(500).json({ status: 'error', details: err instanceof Error ? err.message : String(err) });
+  }
+});
+
 // ===== API ROUTES =====
 
 app.get('/api/bootstrap', async (req, res) => {
   const userId = getUserId(req);
   if (!userId) return res.status(401).json({ error: 'Unauthorized' });
   try {
+    // Check Redis cache first — serve from cache for 60s to protect DB at scale
+    const cacheKey = REDIS_KEYS.userBootstrap(userId);
+    const cached = await redis.get(cacheKey);
+    if (cached) {
+      console.log(`⚡ [Bootstrap] Cache HIT for user ${userId.substring(0,8)}`);
+      return res.json(cached);
+    }
+
+    console.log(`🔄 [Bootstrap] Cache MISS — querying DB for user ${userId.substring(0,8)}`);
     const [profileRes, convRes, notifRes, postsRes, followRes] = await Promise.all([
       supabase.from('profiles').select('*').eq('id', userId).maybeSingle(),
       supabase.from('conversations').select('*').contains('participants', [userId]).order('updatedat', { ascending: false }).limit(20),
-      supabase.from('notifications').select('*').eq('user_id', userId).order('created_at', { ascending: false }).limit(20),
-      supabase.from('posts').select(POST_SELECT).order('created_at', { ascending: false }).limit(20),
+      supabase.from('notifications').select('*, sender:profiles!senderid(full_name, username, avatar_url)').eq('user_id', userId).order('created_at', { ascending: false }).limit(20),
+      redis.get(REDIS_KEYS.FEED_CACHE), // Use feed cache — never query posts fresh on bootstrap
       supabase.from('follows').select('following_user_id').eq('follower_id', userId)
     ]);
-    res.json({ 
-      profile: profileRes.data, 
+
+    let profileData = profileRes.data;
+    if (!profileData) {
+      const { data: newData } = await supabase.from('profiles').upsert({
+        id: userId,
+        username: 'user_' + userId.substring(0, 5),
+        full_name: 'New Member',
+        avatar_url: `https://api.dicebear.com/7.x/avataaars/svg?seed=${userId}`
+      }).select().single();
+      profileData = newData;
+    }
+
+    // Get or fetch posts
+    let posts = postsRes as any[];
+    if (!posts) {
+      const { data } = await supabase.from('posts').select(POST_SELECT).order('created_at', { ascending: false }).limit(20);
+      posts = data || [];
+      await redis.set(REDIS_KEYS.FEED_CACHE, posts, { ex: 300 });
+    }
+
+    const enrichedConvos = await enrichConversations(convRes.data || [], userId);
+    const following = (followRes.data || []).map((f: any) => f.following_user_id);
+
+    const payload = { 
+      profile: profileData, 
       notifications: notifRes.data || [], 
-      posts: postsRes.data || [], 
-      following: (followRes.data || []).map((f: any) => f.following_user_id),
-      conversations: await enrichConversations(convRes.data || [], userId)
-    });
-  } catch (err) { res.status(500).json({ error: 'Bootstrap failed' }); }
+      posts: posts.slice(0, 20), 
+      following,
+      conversations: enrichedConvos,
+      serverTime: new Date().toISOString(),
+      _cached: false
+    };
+
+    // Cache per-user for 60 seconds — huge win at scale
+    await redis.set(cacheKey, { ...payload, _cached: true }, { ex: 60 });
+    // Also cache following separately for other routes
+    await redis.set(REDIS_KEYS.userFollowing(userId), following, { ex: 120 });
+
+    res.json(payload);
+  } catch (err) { 
+    console.error('Bootstrap error:', err);
+    res.status(500).json({ error: 'Bootstrap failed' }); 
+  }
 });
 
 async function enrichConversations(convos: any[], userId: string) {
-  if (!userId) return convos;
-  return await Promise.all(convos.map(async (convo) => {
-    try {
-      // Use case-insensitive comparison for IDs
-      const otherId = convo.participants?.find((p: string) => p.toLowerCase() !== userId.toLowerCase());
-      let profile = null;
-      if (otherId) {
-        const { data: profileData } = await supabase.from('profiles').select('*').eq('id', otherId).maybeSingle();
-        if (profileData) {
-          profile = {
-            ...profileData,
-            display_name: profileData.full_name || profileData.username || 'User',
-            initial: (profileData.full_name || profileData.username || 'U').substring(0, 1).toUpperCase()
-          };
-        }
-      }
+  if (!userId || convos.length === 0) return convos;
+
+  try {
+    // 1. Batch fetch unread counts to avoid "spamming" HEAD requests
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const convoIds = convos.map(c => c.id).filter(id => id && uuidRegex.test(id));
+    if (convoIds.length === 0) return convos;
+
+    const { data: unreadData, error: unreadError } = await supabase
+      .from('messages')
+      .select('conversationid, senderid')
+      .in('conversationid', convoIds)
+      .eq('isread', false);
       
-      const { count } = await supabase.from('messages')
-        .select('*', { count: 'exact', head: true })
-        .eq('conversationid', convo.id)
-        .eq('isread', false)
-        .neq('senderid', userId);
-        
-      return { ...convo, profile, unreadCount: count || 0 };
-    } catch (innerErr) {
-      console.error(`Error enriching conversation ${convo.id}:`, innerErr);
-      return { ...convo, profile: null, unreadCount: 0 };
+    if (unreadError) {
+      console.error('❌ [UnreadCount] Supabase Error:', unreadError);
+      console.error('Convo IDs attempted:', convoIds);
     }
-  }));
+
+    // Filter unread data by senderid != userId in JS to be safe if the filter above is grumpy
+    const validUnreadData = (unreadData || []).filter((msg: any) => msg.senderid !== userId);
+
+    // Map counts to conversation IDs
+    const unreadCountsMap = validUnreadData.reduce((acc: any, msg: any) => {
+      acc[msg.conversationid] = (acc[msg.conversationid] || 0) + 1;
+      return acc;
+    }, {});
+
+    // 2. Fetch all profiles in one go
+    const otherIds = Array.from(new Set(
+      convos.flatMap(c => (c.participants || []))
+      .filter((p: string) => p && p.toLowerCase() !== userId.toLowerCase())
+    ));
+
+    let profilesMap: any = {};
+    if (otherIds.length > 0) {
+      const { data: profilesData } = await supabase.from('profiles').select('*').in('id', otherIds);
+      profilesMap = (profilesData || []).reduce((acc: any, p: any) => {
+        acc[p.id] = {
+          ...p,
+          display_name: p.full_name || p.username || 'User',
+          initial: (p.full_name || p.username || 'U').substring(0, 1).toUpperCase()
+        };
+        return acc;
+      }, {});
+    }
+
+    return convos.map(convo => {
+      const otherId = convo.participants?.find((p: string) => p.toLowerCase() !== userId.toLowerCase());
+      return {
+        ...convo,
+        profile: otherId ? profilesMap[otherId] : null,
+        unreadCount: unreadCountsMap[convo.id] || 0
+      };
+    });
+  } catch (err) {
+    console.error('Error enriching conversations:', err);
+    return convos;
+  }
 }
 
 app.get('/api/posts', async (req, res) => {
   try {
+    const currentUserId = req.headers['x-user-id'] as string;
     const cachedFeed = await redis.get(REDIS_KEYS.FEED_CACHE);
-    if (cachedFeed) return res.json(cachedFeed);
-    const { data, error } = await supabase.from("posts").select(POST_SELECT).order("created_at", { ascending: false }).limit(50);
-    if (error) throw error;
-    await redis.set(REDIS_KEYS.FEED_CACHE, data, { ex: 60 });
-    res.json(data);
-  } catch (err) { res.status(500).json({ error: 'Failed' }); }
+    let posts = cachedFeed as any[];
+
+    if (!posts) {
+      const { data, error } = await supabase.from("posts")
+        .select(POST_SELECT)
+        .order("created_at", { ascending: false })
+        .limit(50);
+      if (error) throw error;
+      posts = data || [];
+      await redis.set(REDIS_KEYS.FEED_CACHE, posts, { ex: 300 });
+    }
+
+    // Cache user interactions in Redis to avoid per-request DB queries
+    let likedIds: string[] = [];
+    let repostedIds: string[] = [];
+
+    if (currentUserId) {
+      const interactionKey = REDIS_KEYS.userInteractions(currentUserId);
+      const cachedInteractions = await redis.get(interactionKey) as any;
+
+      if (cachedInteractions) {
+        likedIds = cachedInteractions.likedIds || [];
+        repostedIds = cachedInteractions.repostedIds || [];
+      } else {
+        // Only query DB on cache miss
+        const [likes, reposts] = await Promise.all([
+          supabase.from('post_likes').select('post_id').eq('user_id', currentUserId),
+          supabase.from('post_reposts').select('post_id').eq('user_id', currentUserId)
+        ]);
+        likedIds = likes.data?.map(l => l.post_id) || [];
+        repostedIds = reposts.data?.map(r => r.post_id) || [];
+        // Cache for 2 minutes — invalidated on like/repost actions
+        await redis.set(interactionKey, { likedIds, repostedIds }, { ex: 120 });
+      }
+    }
+
+    const enhancedPosts = posts.map(post => ({
+      ...post,
+      isLiked: likedIds.includes(post.id),
+      isReposted: repostedIds.includes(post.id)
+    }));
+
+    res.json(enhancedPosts);
+  } catch (err) { 
+    console.error('Fetch posts error:', err);
+    res.status(500).json({ error: 'Failed' }); 
+  }
 });
 
 app.get('/api/conversations', async (req, res) => {
@@ -437,9 +605,101 @@ app.get('/api/notifications', async (req, res) => {
   const userId = getUserId(req);
   if (!userId) return res.status(401).json({ error: 'Unauthorized' });
   try {
-    const { data, error } = await supabase.from('notifications').select('*').eq('user_id', userId).order('created_at', { ascending: false }).limit(50);
+    const { data, error } = await supabase.from('notifications')
+      .select('*, sender:profiles!senderid(full_name, username, avatar_url)')
+      .eq('user_id', userId).order('created_at', { ascending: false }).limit(50);
     if (error) throw error;
     res.json(data);
+  } catch (err) { res.status(500).json({ error: 'Failed' }); }
+});
+
+// Mark single notification as read
+app.patch('/api/notifications/:id/read', async (req, res) => {
+  const userId = getUserId(req);
+  const { id } = req.params;
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    const { error } = await supabase.from('notifications').update({ is_read: true }).eq('id', id).eq('user_id', userId);
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: 'Failed' }); }
+});
+
+// Mark all notifications as read
+app.patch('/api/notifications/read-all', async (req, res) => {
+  const userId = getUserId(req);
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    const { error } = await supabase.from('notifications').update({ is_read: true }).eq('user_id', userId);
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: 'Failed' }); }
+});
+
+// Delete notification
+app.delete('/api/notifications/:id', async (req, res) => {
+  const userId = getUserId(req);
+  const { id } = req.params;
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    const { error } = await supabase.from('notifications').delete().eq('id', id).eq('user_id', userId);
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: 'Failed' }); }
+});
+
+// Get full profiles of users following the given user
+app.get('/api/profile/:userId/followers', async (req, res) => {
+  const { userId } = req.params;
+  try {
+    const { data, error } = await supabase
+      .from('follows')
+      .select('profiles!follower_id(*)')
+      .eq('following_user_id', userId);
+    
+    if (error) throw error;
+    res.json((data || []).map((d: any) => d.profiles).filter(Boolean));
+  } catch (err) { res.status(500).json({ error: 'Failed' }); }
+});
+
+// Get full profiles of users the given user is following
+app.get('/api/profile/:userId/following', async (req, res) => {
+  const { userId } = req.params;
+  try {
+    const { data, error } = await supabase
+      .from('follows')
+      .select('profiles!following_user_id(*)')
+      .eq('follower_id', userId);
+    
+    if (error) throw error;
+    res.json((data || []).map((d: any) => d.profiles).filter(Boolean));
+  } catch (err) { res.status(500).json({ error: 'Failed' }); }
+});
+
+// Get following IDs for a user (cached in Redis for 2 min)
+app.get('/api/following/:userId', async (req, res) => {
+  const { userId } = req.params;
+  try {
+    const cacheKey = REDIS_KEYS.userFollowing(userId);
+    const cached = await redis.get(cacheKey);
+    if (cached) return res.json(cached);
+
+    const { data, error } = await supabase.from('follows').select('following_user_id').eq('follower_id', userId);
+    if (error) throw error;
+    const result = (data || []).map((f: any) => f.following_user_id);
+    await redis.set(cacheKey, result, { ex: 120 });
+    res.json(result);
+  } catch (err) { res.status(500).json({ error: 'Failed' }); }
+});
+
+// Check block status between two users
+app.get('/api/blocks/check/:targetUserId', async (req, res) => {
+  const userId = getUserId(req);
+  const { targetUserId } = req.params;
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    const { data } = await supabase.from('blocks').select('id').eq('blocker_id', userId).eq('blocked_id', targetUserId).maybeSingle();
+    res.json({ isBlocked: !!data });
   } catch (err) { res.status(500).json({ error: 'Failed' }); }
 });
 
@@ -462,9 +722,22 @@ app.get('/api/profile/:targetUserId', async (req, res) => {
       ]) : Promise.resolve([{ data: [] }, { data: [] }])
     ]);
 
+    let profileData = profileRes.data;
+    
+    // Auto-create profile if it doesn't exist (e.g. first login)
+    if (!profileData && targetUserId === currentUserId) {
+       const { data: newData } = await supabase.from('profiles').upsert({
+         id: targetUserId,
+         username: 'user_' + targetUserId.substring(0,5),
+         full_name: 'New Member',
+         avatar_url: `https://api.dicebear.com/7.x/avataaars/svg?seed=${targetUserId}`
+       }).select().single();
+       profileData = newData;
+    }
+
     const interactionData: any = interactionsRes;
     res.json({
-      profile: profileRes.data,
+      profile: profileData,
       posts: postsRes.data || [],
       reposts: (repostsRes.data || []).map((r: any) => r.posts).filter(Boolean),
       replies: (repliesRes.data || []).map((r: any) => r.posts).filter(Boolean),
@@ -480,6 +753,61 @@ app.get('/api/profile/:targetUserId', async (req, res) => {
     console.error('Profile fetch failed:', err);
     res.status(500).json({ error: 'Failed' });
   }
+});
+
+app.post('/api/profile/update', async (req, res) => {
+  const userId = getUserId(req);
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+  try {
+    const { username, full_name, bio, website, avatar_url, cover_url } = req.body;
+    const { data, error } = await supabase
+      .from('profiles')
+      .upsert({
+        id: userId,
+        username,
+        full_name,
+        bio,
+        website,
+        avatar_url,
+        cover_url,
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+    
+    // Invalidate bootstrap cache as profile changed
+    await redis.del(REDIS_KEYS.userBootstrap(userId));
+    
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update profile' });
+  }
+});
+
+app.get('/api/profile/:id/followers', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const { data, error } = await supabase
+      .from('follows')
+      .select('follower:profiles!follower_id(*)')
+      .eq('following_user_id', id);
+    if (error) throw error;
+    res.json((data || []).map((f: any) => f.follower).filter(Boolean));
+  } catch (err) { res.status(500).json({ error: 'Failed' }); }
+});
+
+app.get('/api/profile/:id/following', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const { data, error } = await supabase
+      .from('follows')
+      .select('following:profiles!following_user_id(*)')
+      .eq('follower_id', id);
+    if (error) throw error;
+    res.json((data || []).map((f: any) => f.following).filter(Boolean));
+  } catch (err) { res.status(500).json({ error: 'Failed' }); }
 });
 
 app.get('/api/messages/:conversationId', async (req, res) => {

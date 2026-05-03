@@ -21,6 +21,35 @@ async function checkSchema() {
   console.log('\nChecking profiles table...');
   const { data: prof, error: err4 } = await supabase.from('profiles').select('*').limit(1);
   console.log('Profiles Result:', prof, err4);
+
+  console.log('\nChecking posts table...');
+  const { data: post, error: err5 } = await supabase.from('posts').select('*').limit(1);
+  console.log('Posts Result:', post, err5);
+
+  console.log('\nChecking conversations table...');
+  const { data: conv, error: err6 } = await supabase.from('conversations').select('*').limit(1);
+  console.log('Conversations Result:', conv, err6);
+
+  console.log('\nChecking post_reposts table...');
+  const { data: repr, error: err7 } = await supabase.from('post_reposts').select('*').limit(1);
+  console.log('Post Reposts Result:', repr, err7);
+
+  const POST_SELECT = '*, author:profiles!author_id(*), likes_count, comments_count, reposts_count';
+  console.log('\nTesting POST_SELECT query...');
+  const { data: postSelect, error: err8 } = await supabase.from('posts').select(POST_SELECT).limit(1);
+  console.log('POST_SELECT Result:', postSelect, err8);
+
+  console.log('\nTesting profile reposts query...');
+  const { data: profileReposts, error: err9 } = await supabase.from('post_reposts').select('*, posts(*)').limit(1);
+  console.log('Profile Reposts Result (posts(*)):', profileReposts, err9);
+
+  console.log('\nTesting profile reposts query (posts!post_id(*))...');
+  const { data: profileReposts2, error: err10 } = await supabase.from('post_reposts').select('*, posts!post_id(*)').limit(1);
+  console.log('Profile Reposts Result (posts!post_id(*)):', profileReposts2, err10);
+
+  console.log('\nTesting NESTED profile reposts query...');
+  const { data: profileReposts3, error: err11 } = await supabase.from('post_reposts').select('posts(' + POST_SELECT + ')').limit(1);
+  console.log('Nested Reposts Result:', profileReposts3, err11);
 }
 
 checkSchema();

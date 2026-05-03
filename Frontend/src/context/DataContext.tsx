@@ -11,7 +11,7 @@ interface DataContextType {
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
 
-export function DataProvider({ children }: { children: ReactNode }) {
+export default function DataProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const [initialData, setInitialData] = useState<any>(null);
   const [loadingData, setLoadingData] = useState(false);
@@ -61,7 +61,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     } finally {
       setLoadingData(false);
     }
-  }, [user]);
+  }, [user?.id]);
 
   useEffect(() => {
     if (user && !initialData && !loadingData) {

@@ -8,7 +8,6 @@ import {
   Heart
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { supabase } from '../utils/supabase';
 import { useAuth } from '../context/AuthContext';
 import { useNotification } from '../context/NotificationContext';
 import { useNavigate } from 'react-router-dom';
@@ -52,30 +51,28 @@ export default function Notifications() {
 
     if (initialData?.notifications) {
       setNotifications(initialData.notifications);
+      // Use the following data from bootstrap to avoid extra request
+      if (initialData?.following) {
+        setFollowingIds(initialData.following);
+      }
       return;
     }
 
-
     try {
-      const { data, error } = await supabase
-        .from('notifications')
-        .select(`
-          *,
-          sender:profiles!senderid (
-            full_name,
-            username,
-            avatar_url
-          )
-        `)
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
+      const BACKEND_URL = (import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || 'http://localhost:10000').replace(/\/$/, '');
+      const [notifRes, followingRes] = await Promise.all([
+        fetch(`${BACKEND_URL}/api/notifications`, { headers: { 'x-user-id': user.id } }),
+        fetch(`${BACKEND_URL}/api/following/${user.id}`, { headers: { 'x-user-id': user.id } })
+      ]);
 
-      if (error) throw error;
-      setNotifications(data || []);
-
-      // Fetch following status to show/hide follow back button
-      const { data: followData } = await supabase.from('follows').select('following_user_id').eq('follower_id', user.id);
-      setFollowingIds((followData || []).map(f => f.following_user_id));
+      if (notifRes.ok) {
+        const data = await notifRes.json();
+        setNotifications(data || []);
+      }
+      if (followingRes.ok) {
+        const data = await followingRes.json();
+        setFollowingIds(Array.isArray(data) ? data : []);
+      }
     } catch (err) {
       console.error('Error fetching notifications:', err);
     }
@@ -103,35 +100,26 @@ export default function Notifications() {
   }, [user, initialData]);
 
   const markAsRead = async (id: string) => {
-    const { error } = await supabase
-      .from('notifications')
-      .update({ is_read: true })
-      .eq('id', id);
-
-    if (!error) {
+    const BACKEND_URL = (import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || 'http://localhost:10000').replace(/\/$/, '');
+    const res = await fetch(`${BACKEND_URL}/api/notifications/${id}/read`, { method: 'PATCH', headers: { 'x-user-id': user?.id || '' } });
+    if (res.ok) {
       setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n));
     }
   };
 
   const markAllAsRead = async () => {
     if (!user) return;
-    const { error } = await supabase
-      .from('notifications')
-      .update({ is_read: true })
-      .eq('user_id', user.id);
-
-    if (!error) {
+    const BACKEND_URL = (import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || 'http://localhost:10000').replace(/\/$/, '');
+    const res = await fetch(`${BACKEND_URL}/api/notifications/read-all`, { method: 'PATCH', headers: { 'x-user-id': user.id } });
+    if (res.ok) {
       setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
     }
   };
 
   const deleteNotification = async (id: string) => {
-    const { error } = await supabase
-      .from('notifications')
-      .delete()
-      .eq('id', id);
-
-    if (!error) {
+    const BACKEND_URL = (import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || 'http://localhost:10000').replace(/\/$/, '');
+    const res = await fetch(`${BACKEND_URL}/api/notifications/${id}`, { method: 'DELETE', headers: { 'x-user-id': user?.id || '' } });
+    if (res.ok) {
       setNotifications(prev => prev.filter(n => n.id !== id));
     }
   };

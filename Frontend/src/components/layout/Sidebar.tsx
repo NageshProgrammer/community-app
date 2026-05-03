@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
+import { supabase } from '../../utils/supabase';
 
 const navItems = [
   { icon: Home, label: 'Home', path: '/' },
@@ -39,7 +40,7 @@ export function Sidebar({ onOpenPostModal }: SidebarProps) {
     if (!user) return;
 
     const fetchBadgeCounts = async () => {
-      // Throttle: Don't fetch if we've fetched in the last 15 seconds
+      // Throttle: Don't fetch more than once every 15 seconds to save Supabase requests
       const now = Date.now();
       if (now - lastFetchTime.current < 15000) return;
       lastFetchTime.current = now;
@@ -49,7 +50,6 @@ export function Sidebar({ onOpenPostModal }: SidebarProps) {
         const fallbackUrl = isProd ? window.location.origin : 'http://localhost:10000';
         const BACKEND_URL = (import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || fallbackUrl).replace(/\/$/, '');
         
-        // Use parallel fetching to reduce connection time
         const [convRes, notifRes] = await Promise.all([
            fetch(`${BACKEND_URL}/api/conversations`, { headers: { 'x-user-id': user.id } }),
            fetch(`${BACKEND_URL}/api/notifications`, { headers: { 'x-user-id': user.id } })
@@ -63,7 +63,7 @@ export function Sidebar({ onOpenPostModal }: SidebarProps) {
 
         if (notifRes.ok) {
           const notifications = await notifRes.json();
-          const totalUnreadNotifs = notifications.filter((n: any) => !n.isRead).length;
+          const totalUnreadNotifs = notifications.filter((n: any) => !n.is_read).length;
           setUnreadNotifications(totalUnreadNotifs);
         }
       } catch (err) {
@@ -73,9 +73,34 @@ export function Sidebar({ onOpenPostModal }: SidebarProps) {
 
     fetchBadgeCounts();
 
-    // DISABLED POLLING COMPLETELY TO SAVE FREE TIER LIMITS
-    // const interval = setInterval(fetchBadgeCounts, 300000); 
-    // return () => clearInterval(interval);
+    // SUPABASE REALTIME: Replace polling with lightweight listeners
+    const channel = supabase
+      .channel(`sidebar-updates-${user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'notifications',
+          filter: `user_id=eq.${user.id}`
+        },
+        () => fetchBadgeCounts()
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'conversations',
+          filter: `participants=cs.{${user.id}}`
+        },
+        () => fetchBadgeCounts()
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
 
   }, [user?.id]);
 

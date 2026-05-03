@@ -221,29 +221,22 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
   const fetchFollowing = async () => {
     if (!user) return;
     try {
-      // Step 1: Get the list of IDs you follow
-      const { data: followData, error: followError } = await supabase
-        .from('follows')
-        .select('*')
-        .eq('follower_id', user.id);
-
-      if (followError) throw followError;
-
-      const followingIds = (followData || []).map(f => f.following_id || f.following_user_id).filter(Boolean);
+      const URL = (import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || 'http://localhost:10000').replace(/\/$/, '');
+      const followingIds = await fetch(`${URL}/api/following/${user.id}`, {
+        headers: { 'x-user-id': user.id }
+      }).then(r => r.ok ? r.json() : []);
 
       if (followingIds.length === 0) {
         setFollowingList([]);
         return;
       }
-
-      // Step 2: Fetch profiles for those IDs
+      // Fetch profiles for those IDs
       const { data: profileData, error: profileError } = await supabase
         .from('profiles')
         .select('id, username, full_name, avatar_url')
         .in('id', followingIds);
 
       if (profileError) throw profileError;
-
       const profiles = (profileData || []).filter(p => !groupParticipants.find((gp: any) => gp.id === p.id));
       setFollowingList(profiles);
     } catch (err) {
@@ -551,8 +544,9 @@ export default function Conversation({ chat, onBack }: ConversationProps) {
   useEffect(() => {
     if (chat.targetUserId && user) {
       const checkBlockStatus = async () => {
-        const { data } = await supabase.from('blocks').select('*').eq('blocker_id', user.id).eq('blocked_id', chat.targetUserId).maybeSingle();
-        setIsBlocked(!!data);
+        const URL = (import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || 'http://localhost:10000').replace(/\/$/, '');
+        const res = await fetch(`${URL}/api/blocks/check/${chat.targetUserId}`, { headers: { 'x-user-id': user.id } }).then(r => r.ok ? r.json() : { isBlocked: false });
+        setIsBlocked(res.isBlocked);
       };
       checkBlockStatus();
     }

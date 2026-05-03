@@ -98,25 +98,6 @@ export function Profile() {
       const data = await response.json();
       let activeProfile = data.profile;
 
-      if (!activeProfile && isOwnProfile && currentUser) {
-        const defaultUsername = currentUser.email?.split("@")[0] || "user";
-        const { data: upsertData, error: upsertError } = await supabase
-          .from("profiles")
-          .upsert({
-            id: currentUser.id,
-            username: defaultUsername,
-            full_name: defaultUsername,
-            avatar_url: `https://api.dicebear.com/7.x/avataaars/svg?seed=${currentUser.id}`,
-            bio: "",
-            website: "",
-          })
-          .select()
-          .single();
-
-        if (upsertError) throw upsertError;
-        activeProfile = upsertData as any;
-      }
-
       if (activeProfile) {
         setProfile(activeProfile as UserProfile);
         setFullName(activeProfile.full_name || "");
@@ -264,10 +245,17 @@ export function Profile() {
         finalCoverUrl = publicUrl;
       }
 
-      const { data, error } = await supabase
-        .from("profiles")
-        .upsert({
-          id: currentUser.id,
+      const isProd = import.meta.env.PROD;
+      const fallbackUrl = isProd ? window.location.origin : 'http://localhost:10000';
+      const BACKEND_URL = (import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || fallbackUrl).replace(/\/$/, '');
+      
+      const response = await fetch(`${BACKEND_URL}/api/profile/update`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-user-id': currentUser.id 
+        },
+        body: JSON.stringify({
           username: username || profile.username,
           full_name: fullName || profile.full_name,
           bio: bio || profile.bio,
@@ -275,10 +263,10 @@ export function Profile() {
           avatar_url: finalAvatarUrl,
           cover_url: finalCoverUrl,
         })
-        .select()
-        .single();
+      });
 
-      if (error) throw error;
+      if (!response.ok) throw new Error("Update failed");
+      const data = await response.json();
 
       if (data) {
         setProfile(data as UserProfile);
@@ -310,30 +298,14 @@ export function Profile() {
     setFollowList([]);
 
     try {
-      const isFollowers = type === 'followers';
-      const { data, error } = await supabase
-        .from('follows')
-        .select(`
-          follower_id,
-          following_user_id,
-          user:profiles!${isFollowers ? 'follower_id' : 'following_user_id'} (
-            id,
-            username,
-            full_name,
-            avatar_url,
-            bio
-          )
-        `)
-        .eq(isFollowers ? 'following_user_id' : 'follower_id', targetUserId);
-
-      if (error) throw error;
+      const isProd = import.meta.env.PROD;
+      const fallbackUrl = isProd ? window.location.origin : 'http://localhost:10000';
+      const BACKEND_URL = (import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || fallbackUrl).replace(/\/$/, '');
       
-      if (data) {
-        const profiles = data
-          .map((item: any) => item.user)
-          .filter(u => u !== null);
-        setFollowList(profiles);
-      }
+      const response = await fetch(`${BACKEND_URL}/api/profile/${targetUserId}/${type}`);
+      if (!response.ok) throw new Error("Failed to fetch follow list");
+      const data = await response.json();
+      setFollowList(data || []);
     } catch (err) {
       console.error(`Error fetching ${type}:`, err);
     } finally {

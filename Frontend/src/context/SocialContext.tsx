@@ -1,6 +1,5 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import type { ReactNode } from 'react';
-import { supabase } from '../utils/supabase';
 import { useAuth } from './AuthContext';
 import { useNotification } from './NotificationContext';
 import { useData } from './DataContext';
@@ -17,7 +16,7 @@ interface SocialContextType {
 
 const SocialContext = createContext<SocialContextType | undefined>(undefined);
 
-export function SocialProvider({ children }: { children: ReactNode }) {
+export default function SocialProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const { showNotification } = useNotification();
   const { initialData } = useData();
@@ -39,13 +38,18 @@ export function SocialProvider({ children }: { children: ReactNode }) {
 
     const fetchFollowing = async () => {
       setLoadingSocial(true);
-      const { data, error } = await supabase
-        .from('follows')
-        .select('following_user_id')
-        .eq('follower_id', user.id);
-
-      if (!error && data) {
-        setFollowingIds(data.map(f => f.following_user_id));
+      try {
+        const isProd = import.meta.env.PROD;
+        const fallbackUrl = isProd ? window.location.origin : 'http://localhost:10000';
+        const BACKEND_URL = (import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || fallbackUrl).replace(/\/$/, '');
+        
+        const response = await fetch(`${BACKEND_URL}/api/following/${user.id}`);
+        if (response.ok) {
+          const data = await response.json();
+          setFollowingIds(data || []);
+        }
+      } catch (err) {
+        console.error('Error fetching following:', err);
       }
       setLoadingSocial(false);
     };

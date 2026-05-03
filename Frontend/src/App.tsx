@@ -3,10 +3,10 @@ import { Routes, Route, useLocation, Navigate } from 'react-router-dom';
 import { AnimatePresence } from 'framer-motion';
 
 // Context
-import { PostProvider } from './context/PostContext';
+import PostProvider from './context/PostContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
-import { SocialProvider } from './context/SocialContext';
+import SocialProvider from './context/SocialContext';
 import { NotificationProvider } from './context/NotificationContext';
 
 // Layout Components
@@ -127,7 +127,7 @@ function AppContent() {
   );
 }
 
-import { DataProvider } from './context/DataContext';
+import DataProvider from './context/DataContext';
 
 function App() {
   return (

@@ -16,4 +16,10 @@ export const redis = new Redis({
 export const REDIS_KEYS = {
   PENDING_ACTIONS: 'community:pending_actions',
   FEED_CACHE: 'community:feed_cache',
+  // Per-user caches (TTL: 60s) — prevents DB hammering at scale
+  userBootstrap: (uid: string) => `community:bootstrap:${uid}`,
+  userInteractions: (uid: string) => `community:interactions:${uid}`,
+  userConversations: (uid: string) => `community:convos:${uid}`,
+  userNotifications: (uid: string) => `community:notifs:${uid}`,
+  userFollowing: (uid: string) => `community:following:${uid}`,
 };

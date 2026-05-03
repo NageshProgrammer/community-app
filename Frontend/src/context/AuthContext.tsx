@@ -22,52 +22,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const ensureProfile = async (user: User) => {
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('id', user.id)
-        .maybeSingle();
-
-      if (!profile) {
-        const metadata = user.user_metadata || {};
-        const username = metadata.username || user.email?.split('@')[0] || `user_${user.id.substring(0, 5)}`;
-        const full_name = metadata.full_name || username;
-
-        await supabase.from('profiles').insert({
-          id: user.id,
-          username,
-          full_name,
-          avatar_url: metadata.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.id}`,
-        });
-      }
-
-      // Ensure data in dedicated 'user' table as well
-      const { data: existingUser } = await supabase
-        .from('user')
-        .select('id')
-        .eq('id', user.id)
-        .maybeSingle();
-
-      if (!existingUser) {
-        const metadata = user.user_metadata || {};
-        await supabase.from('user').insert({
-          id: user.id,
-          email: user.email,
-          full_name: metadata.full_name,
-          avatar_url: metadata.avatar_url,
-          provider: user.app_metadata.provider || 'google',
-          raw_user_meta_data: metadata // This stores the complete Google JSON
-        });
-      }
-    };
-
     // Get initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       const currentUser = session?.user ?? null;
       setUser(currentUser);
-      if (currentUser) ensureProfile(currentUser);
       setLoading(false);
     });
 
@@ -77,7 +36,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setSession(session);
         const currentUser = session?.user ?? null;
         setUser(currentUser);
-        if (currentUser) ensureProfile(currentUser);
         setLoading(false);
       }
     );

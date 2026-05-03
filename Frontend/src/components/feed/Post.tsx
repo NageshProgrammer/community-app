@@ -143,11 +143,7 @@ export const Post = memo(function Post({ post, index, onLike, onRepost, onCommen
       if (textareaRef.current) {
         textareaRef.current.style.height = 'auto';
       }
-      // Wait a moment for DB processing before refetching to replace the optimistic ID
-      setTimeout(async () => {
-        const data = await getComments(post.id);
-        setComments(data);
-      }, 1500);
+      // Socket delivers the real comment via 'new_comment' event — no re-fetch needed
     } catch (err) {
       // Revert if it fails
       setComments(prev => prev.filter(c => c.id !== optimisticComment.id));

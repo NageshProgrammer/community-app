@@ -62,7 +62,7 @@ const setLocalCache = (cache: any) => {
   localStorage.setItem('social_cache_v2', JSON.stringify(cache));
 };
 
-export function PostProvider({ children }: { children: ReactNode }) {
+export default function PostProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const [posts, setPosts] = useState<PostData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -208,18 +208,21 @@ export function PostProvider({ children }: { children: ReactNode }) {
     setLoading(true);
     try {
       const response = await apiFetch('/api/posts', { method: 'GET' }, user?.id);
-      const likedResponse = user ? await supabase.from("post_likes").select("post_id").eq("user_id", user.id) : { data: [] };
-      const repostedResponse = user ? await supabase.from("post_reposts").select("post_id").eq("user_id", user.id) : { data: [] };
-      const likedIds = likedResponse.data?.map((item: any) => item.post_id) ?? [];
-      const repostedIds = repostedResponse.data?.map((item: any) => item.post_id) ?? [];
       if (response && Array.isArray(response)) {
         const mapped = response.map((post: any) => ({
           id: post.id,
           author: { id: post.author_id, name: post.author?.full_name, handle: post.author?.username, avatar: post.author?.avatar_url },
-          content: post.content, timestamp: new Date(post.created_at).toLocaleString(), created_at: post.created_at,
-          likes: post.likes_count || 0, comments: post.comments_count || 0, reposts: post.reposts_count || 0,
-          isLiked: likedIds.includes(post.id), isReposted: repostedIds.includes(post.id),
-          image: post.image, location: post.location, reposted_post_id: post.reposted_post_id
+          content: post.content, 
+          timestamp: new Date(post.created_at).toLocaleString(), 
+          created_at: post.created_at,
+          likes: post.likes_count || 0, 
+          comments: post.comments_count || 0, 
+          reposts: post.reposts_count || 0,
+          isLiked: post.isLiked || false, 
+          isReposted: post.isReposted || false,
+          image: post.image, 
+          location: post.location, 
+          reposted_post_id: post.reposted_post_id
         }));
         setPosts(applyCache(mapped));
       }

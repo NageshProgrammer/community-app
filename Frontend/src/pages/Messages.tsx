@@ -174,6 +174,30 @@ export default function Messages() {
       }
     };
 
+    // SUPABASE REALTIME: Replace potential polling with lightweight listeners
+    const channel = supabase
+      .channel(`messages-list-${user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'conversations',
+          filter: `participants=cs.{${user.id}}` // Contains current user
+        },
+        () => {
+          // Refresh list when any conversation changes
+          if (selectedChatId === null) {
+            fetchConversations();
+          }
+        }
+      )
+      .subscribe();
+
+    if (selectedChatId === null) {
+      fetchConversations();
+    }
+
     const handleMessagesRead = ({ conversationId }: { conversationId: string }) => {
       setChats(prev => prev.map(chat => 
         chat.id === conversationId ? { ...chat, unreadCount: 0 } : chat
@@ -182,15 +206,12 @@ export default function Messages() {
 
     socket.on('messages_read', handleMessagesRead);
 
-    if (selectedChatId === null) {
-      fetchConversations();
-    }
-
     return () => {
       controller.abort();
       socket.off('messages_read', handleMessagesRead);
+      supabase.removeChannel(channel);
     };
-  }, [user, initialData, selectedChatId]);
+  }, [user, initialData]);
 
   const initializingChat = useRef(false);
 
@@ -267,22 +288,14 @@ export default function Messages() {
       const fetchFollowing = async () => {
         setLoadingFollowers(true);
         try {
-          const { data, error } = await supabase
-            .from('follows')
-            .select(`
-              following_user_id,
-              user:profiles!following_user_id (
-                id,
-                username,
-                full_name,
-                avatar_url
-              )
-            `)
-            .eq('follower_id', user.id);
-
-          if (error) throw error;
-          const profiles = data.map(d => d.user).filter(p => p !== null);
-          setFollowingList(profiles);
+          const isProd = import.meta.env.PROD;
+          const fallbackUrl = isProd ? window.location.origin : 'http://localhost:10000';
+          const BACKEND_URL = (import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || fallbackUrl).replace(/\/$/, '');
+          
+          const response = await fetch(`${BACKEND_URL}/api/profile/${user.id}/following`);
+          if (!response.ok) throw new Error("Failed to fetch following");
+          const profiles = await response.json();
+          setFollowingList(profiles || []);
         } catch (err) {
           console.error('Error fetching followers for group:', err);
         } finally {

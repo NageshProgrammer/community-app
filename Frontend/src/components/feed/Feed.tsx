@@ -10,7 +10,7 @@ import { SearchX, ArrowLeft } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom'; 
 
 export function Feed() {
-  const { posts, addPost, toggleLike, toggleRepost, addComment, deletePost, editPost } = usePosts();
+  const { posts, addPost, toggleLike, toggleRepost, addComment, deletePost, editPost, error, loading } = usePosts();
   const { user } = useAuth();
   const { searchQuery, setSearchQuery } = useSocial();
   
@@ -86,6 +86,11 @@ export function Feed() {
       )}
 
       <div className="flex flex-col [&>article:last-child]:border-b-0">
+        {error && (
+          <div className="p-4 m-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-500 text-sm flex items-center justify-center">
+            {error}. Please check your connection or database schema.
+          </div>
+        )}
         {displayPosts.length === 0 ? (
           <motion.div 
             initial={{ opacity: 0, y: 20 }}
